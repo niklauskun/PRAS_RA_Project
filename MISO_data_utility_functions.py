@@ -74,7 +74,7 @@ class LoadMISOData(object):
             os.path.join(miso_datapath, "Bus Mapping Extra Data.csv")
         )
         self.utilities_map = gpd.read_file(
-            os.path.join(hifld_datapath, "Retail_Service_Territories.shp")
+            os.path.join(shp_datapath, "Retail_Service_Territories.shp")
         )
         self.iso_map = gpd.read_file(
             os.path.join(hifld_datapath, "Independent_System_Operators.shp")

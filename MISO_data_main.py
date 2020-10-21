@@ -36,14 +36,15 @@ row_len = 24  # for HDF5 file
 re_penetration = "0.5"
 profile_year = 2012
 
+folder = "testPRAS10.20"  # whatever you name your folder
 
 # datapaths
-folder_datapath = join(os.environ["HOMEPATH"], "Desktop", "PRAS_RA_MISO_930")
-miso_datapath = join(os.environ["HOMEPATH"], "Desktop", "PRAS_RA_MISO_930", "VREData")
-hifld_datapath = join(
-    os.environ["HOMEPATH"], "Desktop", "PRAS_RA_MISO_930", "HIFLD_shapefiles"
-)
-shp_path = os.environ["CONDA_PREFIX"] + r"\Library\share\gdal"
+folder_datapath = join(os.environ["HOMEPATH"], "Desktop", folder)
+miso_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "VREData")
+hifld_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "HIFLD_shapefiles")
+shp_path = (
+    os.environ["CONDA_PREFIX"] + r"\Library\share\gdal"
+)  # you need this to pull the retail shapefile, which doesn't come with everything else
 
 # VRE data load
 vredata = LoadVREData(folder_datapath)
