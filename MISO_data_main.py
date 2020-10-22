@@ -31,12 +31,12 @@ from MISO_data_utility_functions import (
 
 
 # general inputs
-RE_sheet = "Wind-heavy by energy"
-# RE_sheet = "More balanced by energy"
-row_len = 8760  # for HDF5 file
-re_penetration = "0.2"
+# RE_sheet = "Wind-heavy by energy"
+RE_sheet = "More balanced by energy"
+row_len = 168  # for HDF5 file
+re_penetration = "0.8"
 profile_year = 2012
-NREL = False
+NREL = True
 NREL_year, NREL_profile = 2050, "EFSLoadProfile_High_Moderate"
 
 folder = "testPRAS10.20"  # whatever you name your folder
@@ -135,11 +135,14 @@ if NREL:
 # )
 # HDF5_data.add_re_generator("Utility Wind", "MEC", prof_id, "0.1", 2012)
 
+# HDF5_data.add_storage_resource("MEC", 100, 3)
+# HDF5_data.add_storage_resource("EES-TX", 100, 3)
+# HDF5_data.add_all_storage_resource(1000, 4)
 # add all VRE generators
 HDF5_data.add_all_re_profs(re_penetration, profile_year, choice="max")
 
 # finally, export PRAS case
-HDF5_data.write_h5pyfile("testfilevre8760max", load_scalar=1)
+HDF5_data.write_h5pyfile("testfilevre168", load_scalar=1)
 
 
 # how long did this take?

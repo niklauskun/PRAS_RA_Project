@@ -863,6 +863,86 @@ class CreateHDF5(object):
                 self.add_re_generator(p, zone, profile_ID, penetration, year)
         print("...done adding VRE profiles")
 
+    def hstack_helper(self, array, value):
+        return np.hstack((array, np.ones((self.row_len, 1)) * value))
+
+    def add_all_storage_resource(self, capacity, duration):
+        for zone in self.vre_scenario_df.index:
+            print(
+                "adding "
+                + str(capacity)
+                + "MW, "
+                + str(duration)
+                + "-hour storage in zone "
+                + zone
+                + " to storage profiles"
+            )
+            self.add_storage_resource(zone, capacity, duration)
+
+    def add_storage_resource(
+        self,
+        zone,
+        capacity,
+        duration,
+        charge_efficiency=0.9,
+        discharge_efficiency=1,
+        p_repair=1.0,
+        p_fail=0.0,
+        carryover_efficiency=1.0,
+    ):
+        assert (type(zone)) == str
+        zone_int = np.asarray(
+            self.seams_mapping_df[self.seams_mapping_df["CEP Bus Name"] == zone][
+                "CEP Bus ID"
+            ]
+        )[0]
+        name = zone.replace(" ", "") + "_Storage_" + str(duration) + "hour"
+        # add in name, zone of storage resource
+        if hasattr(self, "storage_data_list"):
+            self.storage_data_list.append((zone, name, zone_int))
+            self.storage_charge_capacity_np = self.hstack_helper(
+                self.storage_charge_capacity_np, capacity
+            )
+            self.storage_discharge_capacity_np = self.hstack_helper(
+                self.storage_discharge_capacity_np, capacity
+            )
+            self.storage_energy_np = self.hstack_helper(
+                self.storage_energy_np, capacity * duration
+            )
+            self.storage_discharge_efficiency_np = self.hstack_helper(
+                self.storage_discharge_efficiency_np, discharge_efficiency
+            )
+            self.storage_charge_efficiency_np = self.hstack_helper(
+                self.storage_charge_efficiency_np, charge_efficiency
+            )
+            self.storage_carryover_efficiency_np = self.hstack_helper(
+                self.storage_carryover_efficiency_np, carryover_efficiency
+            )
+            self.storage_repair_np = self.hstack_helper(
+                self.storage_repair_np, p_repair
+            )
+            self.storage_fail_np = self.hstack_helper(self.storage_fail_np, p_fail)
+        else:
+            self.storage_data_list = [(zone, name, zone_int)]
+            self.storage_charge_capacity_np = np.ones((self.row_len, 1)) * capacity
+            self.storage_discharge_capacity_np = np.ones((self.row_len, 1)) * capacity
+            self.storage_energy_np = np.ones((self.row_len, 1)) * capacity * duration
+            self.storage_discharge_efficiency_np = (
+                np.ones((self.row_len, 1)) * discharge_efficiency
+            )
+            self.storage_charge_efficiency_np = (
+                np.ones((self.row_len, 1)) * charge_efficiency
+            )
+            self.storage_carryover_efficiency_np = (
+                np.ones((self.row_len, 1)) * carryover_efficiency
+            )
+            self.storage_repair_np = np.ones((self.row_len, 1)) * p_repair
+            self.storage_fail_np = np.ones((self.row_len, 1)) * p_fail
+        self.storage_data = np.asarray(
+            self.storage_data_list, dtype=self.generators_dtype
+        )
+        return None
+
     def write_h5pyfile(self, filename, load_scalar=1):
         assert (type(filename)) == str
         pras_name = filename + ".pras"
@@ -901,6 +981,44 @@ class CreateHDF5(object):
                 "repairprobability", data=self.repair_np, dtype=np.float
             )
 
+            # storages, if they exist
+            if hasattr(self, "storage_data"):
+                storages_group = f.create_group("storages")
+                storages_group.create_dataset("_core", data=self.storage_data)
+                storages_group.create_dataset(
+                    "chargecapacity",
+                    data=self.storage_charge_capacity_np,
+                    dtype=np.int32,
+                )
+                storages_group.create_dataset(
+                    "dischargecapacity",
+                    data=self.storage_discharge_capacity_np,
+                    dtype=np.int32,
+                )
+                storages_group.create_dataset(
+                    "energycapacity", data=self.storage_energy_np, dtype=np.int32
+                )
+                storages_group.create_dataset(
+                    "chargeefficiency",
+                    data=self.storage_charge_efficiency_np,
+                    dtype=np.float,
+                )
+                storages_group.create_dataset(
+                    "dischargeefficiency",
+                    data=self.storage_discharge_efficiency_np,
+                    dtype=np.float,
+                )
+                storages_group.create_dataset(
+                    "carryoverefficiency",
+                    data=self.storage_carryover_efficiency_np,
+                    dtype=np.float,
+                )
+                storages_group.create_dataset(
+                    "failureprobability", data=self.storage_fail_np, dtype=np.float
+                )
+                storages_group.create_dataset(
+                    "repairprobability", data=self.storage_repair_np, dtype=np.float
+                )
             # interfaces
             interfaces_group = f.create_group("interfaces")
             interfaces_group.create_dataset("_core", data=self.interfaces_data)
