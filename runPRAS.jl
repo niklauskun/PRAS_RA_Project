@@ -8,7 +8,7 @@ pathvg = "C:/Users/llavin/Desktop/PRAS/vg.pras"
 pathhighvg = "C:/Users/llavin/Desktop/PRAS/high_vg.pras"
 
 # new path
-path = "C:/Users/llavin/Desktop/PRAS_RA_MISO_930/testfile.pras"
+path = "C:/Users/llavin/Desktop/PRAS_RA_MISO_930/testfilevre8760.pras"
 
 # run model
 using PRAS, FileIO, JLD, DelimitedFiles

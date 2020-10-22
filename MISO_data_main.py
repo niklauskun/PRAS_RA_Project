@@ -26,15 +26,18 @@ from MISO_data_utility_functions import (
     LoadVREScenarios,
     LoadVREData,
     CreateHDF5,
+    NRELEFSprofiles,
 )
 
 
 # general inputs
-# RE_sheet = "Wind-heavy by energy"
-RE_sheet = "More balanced by energy"
-row_len = 24  # for HDF5 file
-re_penetration = "0.5"
+RE_sheet = "Wind-heavy by energy"
+# RE_sheet = "More balanced by energy"
+row_len = 8760  # for HDF5 file
+re_penetration = "0.2"
 profile_year = 2012
+NREL = False
+NREL_year, NREL_profile = 2050, "EFSLoadProfile_High_Moderate"
 
 folder = "testPRAS10.20"  # whatever you name your folder
 
@@ -45,6 +48,11 @@ hifld_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "HIFLD_shapefil
 shp_path = (
     os.environ["CONDA_PREFIX"] + r"\Library\share\gdal"
 )  # you need this to pull the retail shapefile, which doesn't come with everything else
+
+## testing of new function in inline code ##
+if NREL:
+    nreltester = NRELEFSprofiles(folder_datapath, NREL_profile)
+    load, normprofile = nreltester.run_all(NREL_year)
 
 # VRE data load
 vredata = LoadVREData(folder_datapath)
@@ -77,7 +85,7 @@ SEAMS_LRZ_map["MISO-MS"] = ["LRZ 10"]
 # metadata for HDF5
 metadata = {
     "pras_dataversion": "v0.5.0",
-    "start_timestamp": str(profile_year) + "-01-01T00:00:00-05:00",
+    "start_timestamp": "2012-01-01T00:00:00-05:00",
     "timestep_count": row_len,
     "timestep_length": 1,
     "timestep_unit": "h",
@@ -118,20 +126,20 @@ HDF5_data.create_gens_np()
 HDF5_data.create_zone_np()
 HDF5_data.create_tx_np()
 
+if NREL:
+    HDF5_data.modify_load_year(NREL_year, load, normprofile)
+
 # test adding a generator
 # prof_id = np.random.choice(
 #    final_miso_data[final_miso_data.FINAL_SEAMS_ZONE == "MEC"].Name.unique()
 # )
 # HDF5_data.add_re_generator("Utility Wind", "MEC", prof_id, "0.1", 2012)
 
-if profile_year != 2012:
-    HDF5_data.modify_load_year(profile_year)
-
 # add all VRE generators
-HDF5_data.add_all_re_profs(re_penetration, profile_year)
+HDF5_data.add_all_re_profs(re_penetration, profile_year, choice="max")
 
 # finally, export PRAS case
-HDF5_data.write_h5pyfile("testfilevre")
+HDF5_data.write_h5pyfile("testfilevre8760max", load_scalar=1)
 
 
 # how long did this take?

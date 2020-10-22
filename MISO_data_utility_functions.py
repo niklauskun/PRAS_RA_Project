@@ -17,6 +17,9 @@ from matplotlib.legend_handler import HandlerPatch
 import descartes
 from scipy.spatial.distance import cdist
 import h5py
+import requests
+from zipfile import ZipFile
+import subprocess, sys
 
 # patch handlers
 # https://stackoverflow.com/questions/40672088/matplotlib-customize-the-legend-to-show-squares-instead-of-rectangles
@@ -737,11 +740,19 @@ class CreateHDF5(object):
             * 0.01
         )
 
-    def modify_load_year(self, year):
-        print(self.seams_load_df)
-
-        print(self.MISO_load_df)
-
+    def modify_load_year(self, year, new_load_magnitude, new_load_profile):
+        scalar = new_load_magnitude / (
+            self.seams_load_df.iloc[:, 1:].sum(axis=1).mean()
+        )
+        self.seams_load_df.iloc[:, 1:] = self.seams_load_df.iloc[:, 1:] * scalar
+        seams_profile = (
+            self.seams_load_df.iloc[:, 1:].sum(axis=1)
+            / self.seams_load_df.iloc[:, 1:].sum(axis=1).sum()
+        )
+        self.seams_load_df.iloc[:, 1:] = self.seams_load_df.iloc[:, 1:].mul(
+            (new_load_profile.LoadMW.reset_index().LoadMW / seams_profile), axis=0
+        )
+        return None
         # zones 8, 9, 10 must be filled pro-rata w/ their share of miso load on similar days
 
     def get_vre_key(self, name):
@@ -812,20 +823,47 @@ class CreateHDF5(object):
         penetration,
         year,
         profile_types=["Utility Wind", "Distributed Solar", "Utility Solar"],
-        random=True,
+        choice="random",
     ):
+        assert (type(choice)) == str
+        choice = choice.lower()  # removes casing issues
         for zone in self.vre_scenario_df.index:
             print("adding VRE in zone " + zone + " to generation profiles")
-            profile_ID = np.random.choice(
-                self.miso_geography_df[
-                    self.miso_geography_df.FINAL_SEAMS_ZONE == zone
-                ].Name.unique()
-            )
             for p in profile_types:
+                if choice == "max":
+                    id_list = [
+                        str(i)
+                        for i in list(
+                            self.miso_geography_df[
+                                self.miso_geography_df.FINAL_SEAMS_ZONE == zone
+                            ].Name
+                        )
+                    ]
+                    profile_ID = (
+                        self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
+                    )
+                elif choice == "min":
+                    id_list = [
+                        str(i)
+                        for i in list(
+                            self.miso_geography_df[
+                                self.miso_geography_df.FINAL_SEAMS_ZONE == zone
+                            ].Name
+                        )
+                    ]
+                    profile_ID = (
+                        self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
+                    )
+                else:
+                    profile_ID = np.random.choice(
+                        self.miso_geography_df[
+                            self.miso_geography_df.FINAL_SEAMS_ZONE == zone
+                        ].Name.unique()
+                    )
                 self.add_re_generator(p, zone, profile_ID, penetration, year)
         print("...done adding VRE profiles")
 
-    def write_h5pyfile(self, filename):
+    def write_h5pyfile(self, filename, load_scalar=1):
         assert (type(filename)) == str
         pras_name = filename + ".pras"
         os.chdir(self.folder_datapath)
@@ -842,7 +880,8 @@ class CreateHDF5(object):
             regions_group.create_dataset(
                 "load",
                 data=np.asarray(
-                    self.seams_load_df.iloc[: self.row_len, 1:], dtype=np.int32
+                    load_scalar * self.seams_load_df.iloc[: self.row_len, 1:],
+                    dtype=np.int32,
                 ),
                 dtype=np.int32,
             )
@@ -888,3 +927,75 @@ class CreateHDF5(object):
                 "repairprobability", data=self.txrecovery_np, dtype=np.float
             )
 
+
+class NRELEFSprofiles(object):
+    def __init__(self, folder_datapath, scenario):
+        self.folder_datapath = folder_datapath
+        self.scenario = scenario
+
+    def load_zip_archive(self):
+        url = "https://data.nrel.gov/system/files/126/" + self.scenario + ".zip"
+        r = requests.get(url, stream=True)
+        self.zip_path = self.folder_datapath + "\\NRELdata.zip"
+        with open(self.zip_path, "wb") as fd:
+            for chunk in r.iter_content(chunk_size=128):
+                fd.write(chunk)
+        return None
+
+    def csv_to_df(self):
+        csv_path = os.path.join(self.folder_datapath, self.scenario + ".csv")
+        if os.path.exists(csv_path):
+            print("csv already exists in folder, so reading...")
+            self.df = pd.read_csv(csv_path)
+        else:
+            try:
+                with ZipFile(self.zip_path, "r") as zipObj:
+                    # Extract all the contents of zip file in different directory
+                    zipObj.extractall(self.folder_datapath)
+            except:
+                print("An exception occurred extracting with Python ZipFile library.")
+                print("Attempting to extract using 7zip")
+                subprocess.Popen(
+                    [
+                        r"C:\Program Files\7-Zip\7z.exe",
+                        "e",
+                        f"{self.zip_path}",
+                        f"-o{self.folder_datapath}",
+                        "-y",
+                    ]
+                )
+            self.df = pd.read_csv(csv_path)
+        print("...NREL csv read into dataframe")
+        return None
+
+    def process_csv(
+        self,
+        year,
+        miso_states=["MN", "ND", "MI", "WI", "IA", "IL", "IN", "AK", "LA", "MS"],
+    ):
+        # for now, just year, but may also subset states in future
+        load = (
+            self.df[
+                (self.df.State.isin(miso_states)) & (self.df.Year == year)
+            ].LoadMW.sum()
+            / 8760.0
+        )
+        load8760 = (
+            self.df[(self.df.State.isin(miso_states)) & (self.df.Year == year)]
+            .groupby("LocalHourID")
+            .sum()[["LoadMW"]]
+        )
+        norm8760load = load8760.div(load8760.sum(axis=0), axis=1)
+        if load == 0.0:
+            ylist = list(self.df.Year.unique())
+            raise ValueError(
+                "Invalid Year: only "
+                + ", ".join(map(str, ylist))
+                + " are valid years for this NREL scenario"
+            )
+        return (load, norm8760load)
+
+    def run_all(self, year):
+        self.load_zip_archive()
+        self.csv_to_df()
+        return self.process_csv(year)
