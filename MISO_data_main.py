@@ -31,15 +31,17 @@ from MISO_data_utility_functions import (
 
 
 # general inputs
-# RE_sheet = "Wind-heavy by energy"
-RE_sheet = "More balanced by energy"
-row_len = 168  # for HDF5 file
-re_penetration = "0.8"
+RE_sheet = "Wind-heavy by energy"
+# RE_sheet = "More balanced by energy"
+row_len = 8760  # for HDF5 file
+re_penetration = "0.5"
 profile_year = 2012
 NREL = True
-NREL_year, NREL_profile = 2050, "EFSLoadProfile_High_Moderate"
+NREL_year, NREL_profile = 2040, "EFSLoadProfile_High_Moderate"
+pras_filename = "VRE0.5_wind_2040NRELHihgModerate_8760"
+# fliename convention is VREscenario_REscenario_year_hours
 
-folder = "testPRAS10.20"  # whatever you name your folder
+folder = "testPRAS10.20"  # whatever you name your folder when pulled from Github
 
 # datapaths
 folder_datapath = join(os.environ["HOMEPATH"], "Desktop", folder)
@@ -93,9 +95,9 @@ metadata = {
     "energy_unit": "MWh",
 }
 
-start_time = time.time()
 ## MAIN CODE RUN ##
 ## DO NOT MODIFY ##
+start_time = time.time()
 
 # load bus-level wind and solar locs, match to MISO zones
 miso_data = LoadMISOData(folder_datapath, miso_datapath, hifld_datapath, shp_path)
@@ -129,20 +131,23 @@ HDF5_data.create_tx_np()
 if NREL:
     HDF5_data.modify_load_year(NREL_year, load, normprofile)
 
-# test adding a generator
+# add a single generator, if desired
 # prof_id = np.random.choice(
 #    final_miso_data[final_miso_data.FINAL_SEAMS_ZONE == "MEC"].Name.unique()
 # )
 # HDF5_data.add_re_generator("Utility Wind", "MEC", prof_id, "0.1", 2012)
 
+# add a single storage resource, if desired
 # HDF5_data.add_storage_resource("MEC", 100, 3)
-# HDF5_data.add_storage_resource("EES-TX", 100, 3)
+
+# add a generic sized storage resource at all buses, if desired
 # HDF5_data.add_all_storage_resource(1000, 4)
-# add all VRE generators
+
+# add selected sceanario VRE capacity
 HDF5_data.add_all_re_profs(re_penetration, profile_year, choice="max")
 
 # finally, export PRAS case
-HDF5_data.write_h5pyfile("testfilevre168", load_scalar=1)
+HDF5_data.write_h5pyfile(pras_filename, load_scalar=1)
 
 
 # how long did this take?
