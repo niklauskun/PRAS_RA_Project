@@ -19,6 +19,7 @@ from scipy.spatial.distance import cdist
 import time
 import h5py
 import json
+import datetime as dt
 
 # script imports
 from MISO_data_utility_functions import (
@@ -33,15 +34,19 @@ from MISO_data_utility_functions import (
 # general inputs
 RE_sheet = "Wind-heavy by energy"
 # RE_sheet = "More balanced by energy"
-row_len = 8760  # for HDF5 file
+row_len = 2208  # for HDF5 file
+slice_in_index = 3624  # 0 if you want to start on 1/1
 re_penetration = "0.5"
 profile_year = 2012
 NREL = True
 NREL_year, NREL_profile = 2040, "EFSLoadProfile_High_Moderate"
-pras_filename = "VRE0.5_wind_2040NRELHihgModerate_8760"
+pras_filename = "VRE0.5_wind_2040NRELHihgModerate_2208summer"
 # fliename convention is VREscenario_REscenario_year_hours
 
 folder = "testPRAS10.20"  # whatever you name your folder when pulled from Github
+
+if slice_in_index + row_len > 8760:
+    raise ValueError("cannot index beyond 8760")
 
 # datapaths
 folder_datapath = join(os.environ["HOMEPATH"], "Desktop", folder)
@@ -85,9 +90,14 @@ SEAMS_LRZ_map["EES-TX"] = ["LRZ 9"]
 SEAMS_LRZ_map["MISO-MS"] = ["LRZ 10"]
 
 # metadata for HDF5
+orig_time = dt.datetime.strptime("2012-01-01", "%Y-%m-%d")
+new_time = orig_time + dt.timedelta(
+    hours=slice_in_index
+)  # +24 accounts for leap for now
+
 metadata = {
     "pras_dataversion": "v0.5.0",
-    "start_timestamp": "2012-01-01T00:00:00-05:00",
+    "start_timestamp": new_time.strftime("%Y-%m-%d") + "T00:00:00-05:00",
     "timestep_count": row_len,
     "timestep_length": 1,
     "timestep_unit": "h",
@@ -119,6 +129,7 @@ vre_capacity_scenarios = vre_scenarios.create_seams_df(SEAMS_LRZ_map)
 HDF5_data = CreateHDF5(
     folder_datapath,
     row_len,
+    slice_in_index,
     metadata,
     vre_data_df,
     final_miso_data,
@@ -145,6 +156,10 @@ if NREL:
 
 # add selected sceanario VRE capacity
 HDF5_data.add_all_re_profs(re_penetration, profile_year, choice="max")
+
+# HDF5_data.add_re_generator(
+#    "Utility Wind", "LA-GULF", 261010, "0.5", 2012, overwrite_MW=100
+# )
 
 # finally, export PRAS case
 HDF5_data.write_h5pyfile(pras_filename, load_scalar=1)

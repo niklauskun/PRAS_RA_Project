@@ -577,12 +577,14 @@ class CreateHDF5(object):
         self,
         folder_datapath,
         row_len,
+        slice_in_index,
         metadata,
         vre_profile_df,
         miso_geography_df,
         vre_scenario_df,
     ):
         self.row_len = row_len
+        self.slicer = slice_in_index
         self.metadata = metadata
         self.vre_profile_df = vre_profile_df
         self.miso_geography_df = miso_geography_df
@@ -769,7 +771,9 @@ class CreateHDF5(object):
         else:
             return "Fixed"
 
-    def add_re_generator(self, name, zone, profile_ID, penetration, year):
+    def add_re_generator(
+        self, name, zone, profile_ID, penetration, year, overwrite_MW=0
+    ):
 
         zone_int = np.asarray(
             self.seams_mapping_df[self.seams_mapping_df["CEP Bus Name"] == zone][
@@ -778,14 +782,23 @@ class CreateHDF5(object):
         )[0]
         penetration_col = name + " " + penetration
         generators_data_list = list(self.generators_data)
+        if overwrite_MW != 0:
 
-        generators_data_list.append(
-            (
-                zone.replace(" ", "") + name.replace(" ", ""),
-                name.replace(" ", "_"),
-                zone_int,
+            generators_data_list.append(
+                (
+                    zone.replace(" ", "") + name.replace(" ", "") + "2",
+                    name.replace(" ", "_"),
+                    zone_int,
+                )
             )
-        )
+        else:
+            generators_data_list.append(
+                (
+                    zone.replace(" ", "") + name.replace(" ", ""),
+                    name.replace(" ", "_"),
+                    zone_int,
+                )
+            )
         self.generators_data = np.asarray(
             generators_data_list, dtype=self.generators_dtype
         )
@@ -798,14 +811,26 @@ class CreateHDF5(object):
             active_profile_df.index, infer_datetime_format=True
         )
         active_profile_df["year"] = [x.year for x in active_profile_df.datetime]
-        year_profile_df = active_profile_df[active_profile_df.year == year]
+        active_profile_df["month_day"] = [
+            str(x.month) + "-" + str(x.day) for x in active_profile_df.datetime
+        ]
+        # active_profile_df["day"] = [x.day for x in active_profile_df.datetime]
+        year_profile_df = active_profile_df[
+            (active_profile_df.year == year) & (active_profile_df.month_day != "2-29")
+        ]
 
         # now grab the profile using the key, taking only the first row_len entries
-        np_profile = np.asarray(year_profile_df.loc[:, str(profile_ID)][: self.row_len])
-
+        np_profile = np.asarray(
+            year_profile_df.loc[:, str(profile_ID)][
+                self.slicer : self.slicer + self.row_len
+            ]
+        )
         # and scale it by the capacity scenario
         zonal_capacity = self.vre_scenario_df.at[zone, penetration_col]
         final_capacity_array = np_profile * zonal_capacity  # scales profile
+        if overwrite_MW != 0:
+            print(overwrite_MW)
+            final_capacity_array = np_profile * overwrite_MW
 
         # and append!
         self.capacity_np = np.hstack(
@@ -842,6 +867,7 @@ class CreateHDF5(object):
                     profile_ID = (
                         self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
                     )
+
                 elif choice == "min":
                     id_list = [
                         str(i)
@@ -960,7 +986,10 @@ class CreateHDF5(object):
             regions_group.create_dataset(
                 "load",
                 data=np.asarray(
-                    load_scalar * self.seams_load_df.iloc[: self.row_len, 1:],
+                    load_scalar
+                    * self.seams_load_df.iloc[
+                        self.slicer : self.slicer + self.row_len, 1:
+                    ],
                     dtype=np.int32,
                 ),
                 dtype=np.int32,
