@@ -972,6 +972,8 @@ class CreateHDF5(object):
     def write_h5pyfile(self, filename, load_scalar=1):
         assert (type(filename)) == str
         pras_name = filename + ".pras"
+        if not os.path.exists(os.path.join(self.folder_datapath, "PRAS_files")):
+            os.mkdir(os.path.join(self.folder_datapath,"PRAS_files"))
         os.chdir(os.path.join(self.folder_datapath, "PRAS_files"))
         with h5py.File(pras_name, "w", track_order=True) as f:
             # attrs

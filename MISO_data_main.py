@@ -38,12 +38,12 @@ row_len = 2208  # for HDF5 file
 slice_in_index = 3624  # 0 if you want to start on 1/1
 re_penetration = "0.5"
 profile_year = 2012
-NREL = True
+NREL = False
 NREL_year, NREL_profile = 2040, "EFSLoadProfile_High_Moderate"
 pras_filename = "VRE0.5_wind_2040NRELHihgModerate_2208summer"
 # fliename convention is VREscenario_REscenario_year_hours
 
-folder = "testPRAS10.20"  # whatever you name your folder when pulled from Github
+folder = "testPRAS10.27"  # whatever you name your folder when pulled from Github
 
 if slice_in_index + row_len > 8760:
     raise ValueError("cannot index beyond 8760")
