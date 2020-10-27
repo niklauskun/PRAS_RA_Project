@@ -85,7 +85,7 @@ class LoadMISOData(object):
         self.states_map = gpd.read_file(os.path.join(hifld_datapath, "states.shp"))
         self.miso_gdf = gpd.GeoDataFrame(
             self.miso_map,
-            geometry=gpd.points_from_xy(self.miso_map.Lat, self.miso_map.Lon),
+            geometry=gpd.points_from_xy(self.miso_map.Lon, self.miso_map.Lat),
         )
         print("...data loaded")
 
