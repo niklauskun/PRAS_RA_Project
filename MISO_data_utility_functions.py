@@ -849,6 +849,7 @@ class CreateHDF5(object):
         year,
         profile_types=["Utility Wind", "Distributed Solar", "Utility Solar"],
         choice="random",
+        default_ID = 393035
     ):
         assert (type(choice)) == str
         choice = choice.lower()  # removes casing issues
@@ -864,9 +865,10 @@ class CreateHDF5(object):
                             ].Name
                         )
                     ]
-                    profile_ID = (
-                        self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
-                    )
+                    if id_list != []:
+                        profile_ID = (
+                            self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
+                        )
 
                 elif choice == "min":
                     id_list = [
@@ -877,15 +879,20 @@ class CreateHDF5(object):
                             ].Name
                         )
                     ]
-                    profile_ID = (
-                        self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
-                    )
+                    if id_list != []:
+                        profile_ID = (
+                            self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
+                        )
                 else:
                     profile_ID = np.random.choice(
                         self.miso_geography_df[
                             self.miso_geography_df.FINAL_SEAMS_ZONE == zone
                         ].Name.unique()
                     )
+
+                if id_list == []:
+                    print('using default profile ID '+str(default_ID) +' due to matching problems')
+                    profile_ID = default_ID
                 self.add_re_generator(p, zone, profile_ID, penetration, year)
         print("...done adding VRE profiles")
 
