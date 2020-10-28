@@ -1,33 +1,39 @@
-
-
-path = "C:/Users/llavin/Desktop/testPRAS10.20/PRAS_files/VRE0.5_wind_2040NRELHihgModerate_2208summer.pras"
-path2 = "C:/Users/llavin/Desktop/testPRAS10.20/PRAS_files/VRE0.5_wind_2040NRELHihgModerate_2208summer_addgulfwind.pras"
-# path3 = "C:/Users/Luke/Desktop/testPRAS10.20/PRAS_files/VRE0.5_wind_base_168_addnipswind.pras"
 using PRAS, FileIO, JLD, DelimitedFiles
+foldername = "testPRAS10.27" # whatever you named the folder
+casename = "VRE0.5_wind_2040NRELHihgModerate_8760.pras"
+casename2 = "VRE0.5_wind_2040NRELHihgModerate_8760_addgulfwind.pras"
+
+path = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)
+path2 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)
+
+function run_path_model(input_path, casename, foldername, samples)
+    model = SystemModel(input_path)
+    results = assess(SequentialMonteCarlo(samples=samples), SpatioTemporal(), model)
+    dump(results)
+    region_lole_list = [results.regionloles[i].val for i in keys(results.regionloles)]
+    region_eue_list = [results.regioneues[i].val for i in keys(results.regioneues)]
+    period_lolp_list = [results.periodlolps[i].val for i in keys(results.periodlolps)]
+    period_eue_list = [results.periodeues[i].val for i in keys(results.periodeues)]
+    region_period_eues_list = [results.regionalperiodeues[i].val for i in keys(results.regionalperiodeues)]
+    region_period_lolps_list = [results.regionalperiodlolps[i].val for i in keys(results.regionalperiodlolps)]
+
+    # write desired outputs to csvs, using path-based naming convention
+    cd(joinpath(homedir(), "Desktop", foldername, "results"))
+    case_str = casename[1:findlast(isequal('.'), casename) - 1]
+    writedlm(string(case_str, "_", "regionlole.csv"), region_lole_list)
+    writedlm(string(case_str, "_", "regioneue.csv"), region_eue_list)
+    writedlm(string(case_str, "_", "periodlolp.csv"), period_lolp_list)
+    writedlm(string(case_str, "_", "periodeue.csv"), period_eue_list)
+    writedlm(string(case_str, "_", "regionperiodeue.csv"), region_period_eues_list, ",")
+    writedlm(string(case_str, "_", "regionperiodlolp.csv"), region_period_lolps_list, ",")
+end
+
+# be careful with number of samples - the choice really affects runtime (though also more samples reduces error in results)
+run_path_model(path,casename,foldername, 1000)
+
 mysystemmodel = SystemModel(path)
 mysystemmodel2 = SystemModel(path2)
-mysystemmodel3 = SystemModel(path3)
-myresults = assess(SequentialMonteCarlo(samples=100_000), SpatioTemporal(), mysystemmodel)
-myresults2 = assess(SequentialMonteCarlo(samples=100_000), SpatioTemporal(), mysystemmodel2)
-dump(myresults)
-dump(myresults2)
 
-min_efc, max_efc = assess(EFC{EUE}(1000, "26"), SequentialMonteCarlo(samples=100_000), SpatioTemporal(), mysystemmodel, mysystemmodel2)
-
-min_elcc, max_elcc = assess(ELCC{EUE}(100, "26"), SequentialMonteCarlo(samples=100_000), Minimal(), mysystemmodel, mysystemmodel2)
-
-# list the results
-region_lole_list = [myresults.regionloles[i].val for i in keys(myresults.regionloles)]
-region_eue_list = [myresults.regioneues[i].val for i in keys(myresults.regioneues)]
-period_lolp_list = [myresults.periodlolps[i].val for i in keys(myresults.periodlolps)]
-period_eue_list = [myresults.periodeues[i].val for i in keys(myresults.periodeues)]
-region_period_eues_list = [myresults.regionalperiodeues[i].val for i in keys(myresults.regionalperiodeues)]
-region_period_lolps_list = [myresults.regionalperiodlolps[i].val for i in keys(myresults.regionalperiodlolps)]
-
-# write desired outputs to csvs
-writedlm("regionlole.csv",region_lole_list)
-writedlm("regioneue.csv",region_eue_list)
-writedlm("periodlolp.csv",period_lolp_list)
-writedlm("periodeue.csv",period_eue_list)
-writedlm("regionperiodeue.csv",region_period_eues_list,",")
-writedlm("regionperiodlolps.csv",region_period_lolps_list,",")
+# be careful with number of samples - the choice really affects runtime (though also more samples reduces error in EFC/ELCC calcs)
+min_efc, max_efc = assess(EFC{EUE}(100, "26"), SequentialMonteCarlo(samples=100_000), SpatioTemporal(), mysystemmodel, mysystemmodel2)
+min_elcc, max_elcc = assess(ELCC{EUE}(100, "26"), SequentialMonteCarlo(samples=10_000), Minimal(), mysystemmodel, mysystemmodel2)
