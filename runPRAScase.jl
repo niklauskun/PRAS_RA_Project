@@ -1,10 +1,10 @@
 using PRAS, FileIO, JLD, DelimitedFiles
 foldername = "testPRAS10.27" # whatever you named the folder
-casename = "VRE0.5_wind_2040NRELHihgModerate_8760.pras"
-casename2 = "VRE0.5_wind_2040NRELHihgModerate_8760_addgulfwind.pras"
+casename = "VRE0.5_wind_2012base160%_8760.pras"
+casename2 = "VRE0.5_wind_2012base160%_8760_addgulfsolar.pras"
 
 path = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)
-path2 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)
+path2 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename2)
 
 function run_path_model(input_path, casename, foldername, samples)
     model = SystemModel(input_path)
@@ -28,12 +28,31 @@ function run_path_model(input_path, casename, foldername, samples)
     writedlm(string(case_str, "_", "regionperiodlolp.csv"), region_period_lolps_list, ",")
 end
 
-# be careful with number of samples - the choice really affects runtime (though also more samples reduces error in results)
-run_path_model(path,casename,foldername, 1000)
+function run_path_elcc(input_path, input_path2, capacity, zone_str, samples)
+    m = SystemModel(input_path)
+    m2 = SystemModel(input_path2)
+    min_elcc, max_elcc = assess(ELCC{EUE}(capacity, zone_str), SequentialMonteCarlo(samples=samples), SpatioTemporal(), m, m2)
+    return min_elcc, max_elcc
+end
 
+function run_path_efc(input_path, input_path2, capacity, zone_str, samples)
+    m = SystemModel(input_path)
+    m2 = SystemModel(input_path2)
+    min_efc, max_efc = assess(EFC{EUE}(capacity, zone_str), SequentialMonteCarlo(samples=samples), SpatioTemporal(), m, m2)
+    return min_efc, max_efc
+end
+
+## RUN FUNCTIONS ONCE YOU HAVE LOADED THEM
+# be careful with number of samples - the choice really affects runtime (though also more samples reduces error in results)
+run_path_model(path,casename,foldername, 10000)
+run_path_elcc(path,path2,100,"26",10000)
+run_path_efc(path,path2,100,"26",1000)
+
+
+# Old code that was run line-by-line, can be used for checking
 mysystemmodel = SystemModel(path)
 mysystemmodel2 = SystemModel(path2)
 
 # be careful with number of samples - the choice really affects runtime (though also more samples reduces error in EFC/ELCC calcs)
 min_efc, max_efc = assess(EFC{EUE}(100, "26"), SequentialMonteCarlo(samples=100_000), SpatioTemporal(), mysystemmodel, mysystemmodel2)
-min_elcc, max_elcc = assess(ELCC{EUE}(100, "26"), SequentialMonteCarlo(samples=10_000), Minimal(), mysystemmodel, mysystemmodel2)
+min_elcc, max_elcc = assess(ELCC{EUE}(100, "26"), SequentialMonteCarlo(samples=1000), Minimal(), mysystemmodel, mysystemmodel2)
