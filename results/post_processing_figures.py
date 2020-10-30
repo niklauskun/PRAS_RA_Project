@@ -54,6 +54,10 @@ class plotter(object):
         miso_loads = pd.read_excel(
             join(data_folder, "NREL-Seams Model (MISO).xlsx"), sheet_name="Load"
         )
+        miso_tx = pd.read_excel(
+            join(data_folder, "NREL-Seams Model (MISO).xlsx"),
+            sheet_name="Transmission",
+        )
 
         # results loads
         region_lole = pd.read_csv(
@@ -72,6 +76,12 @@ class plotter(object):
             join(results_folder, casename + "periodlolp.csv"), header=None
         )
 
+        utilization = pd.read_csv(
+            join(results_folder, casename + "utilizations.csv"), header=None
+        )
+
+        flow = pd.read_csv(join(results_folder, casename + "flows.csv"), header=None)
+
         # clean and reformat some of the loaded info
         region_lole.index, region_eue.index = (
             list(miso_map["CEP Bus ID"]),
@@ -82,17 +92,21 @@ class plotter(object):
         tmps = len(region_period_eue.columns)
         region_df["load"] = list(miso_loads.iloc[:tmps, 1:].sum(axis=0))
         region_df["names"] = miso_map["CEP Bus Name"].values
+        # clean and reformat transmission info
 
         # create attributes of stuff we want later
         self.results_folder = results_folder
         self.miso_map = miso_map
         self.miso_loads = miso_loads
+        self.miso_tx = miso_tx
         self.region_df = region_df
         self.region_lole = region_lole
         self.region_eue = region_eue
         self.region_period_eue = region_period_eue
         self.period_eue = period_eue
         self.period_lolp = period_lolp
+        self.utilization = utilization
+        self.flow = flow
         print("...plotting data loaded")
 
     def data_check(self):
@@ -100,6 +114,7 @@ class plotter(object):
         return self.region_df
 
     def format12x24(self, df, mean=False):
+
         # does some formatting for use with seaborn heatmaps
         df["Date"] = list(self.miso_loads["Date"])
         df["Month"] = [
@@ -135,6 +150,116 @@ class plotter(object):
         ax.set_title(attribute_string)
         plt.savefig(
             join(self.results_folder, attribute_string + self.casename + "heatmap.jpg"),
+            dpi=300,
+        )
+        if show:
+            plt.show()
+        return None
+
+    def panel_tx_heatmap(self, attribute_string, show=False):
+        assert (type(attribute_string)) == str
+
+        # create plot
+        rows = 12
+        cols = 5
+        fig, axs = plt.subplots(rows, cols, sharex=True, sharey=True, figsize=(40, 20))
+        # fig.suptitle("All my friends")
+
+        # iterate
+        maxval = 1.0
+        for i, v in enumerate(list(self.miso_tx.Line.unique())[:-1]):
+            if i % 10 == 0:
+                print(
+                    str(i)
+                    + " out of "
+                    + str(len(list(self.miso_tx.Line.unique())))
+                    + " lines are plotted"
+                )
+            df_index = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))].index[0]
+            from_label = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))][
+                "From"
+            ].values[
+                0
+            ]  # [0]
+            to_label = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))][
+                "To"
+            ].values[
+                0
+            ]  # [0]
+            from_name = self.miso_map[self.miso_map["CEP Bus ID"] == from_label][
+                "CEP Bus Name"
+            ].values[0]
+            to_name = self.miso_map[self.miso_map["CEP Bus ID"] == to_label][
+                "CEP Bus Name"
+            ].values[0]
+            attribute = getattr(self, attribute_string)
+            attribute_df = pd.DataFrame(attribute.loc[df_index, :])
+            attribute_df.columns = [0]  # overwrite so matching works
+            sns.heatmap(
+                self.format12x24(attribute_df, mean=True),
+                vmin=0,
+                vmax=maxval,
+                linewidth=0.5,
+                cmap="Reds",
+                cbar=False,
+                ax=axs[int(i / cols), i % cols],
+            )
+            axs[int(i / cols), i % cols].set_ylim(1, 13)
+            axs[int(i / cols), i % cols].set_title(from_name + " to " + to_name)
+
+        # write plot
+        plt.savefig(
+            join(
+                self.results_folder,
+                "ALL" + attribute_string + self.casename + "heatmap.jpg",
+            ),
+            dpi=300,
+        )
+        return None
+
+    def tx_heatmap(self, zone_label, attribute_string, show=False):
+        assert (type(attribute_string)) == str
+
+        # print(float(zone_label))
+        df_index = self.miso_tx[self.miso_tx["Line"] == float(zone_label)].index[0]
+
+        # grab label for plotting
+        from_label = self.miso_tx[self.miso_tx["Line"] == float(zone_label)][
+            "From"
+        ].values[
+            0
+        ]  # [0]
+        to_label = self.miso_tx[self.miso_tx["Line"] == float(zone_label)]["To"].values[
+            0
+        ]  # [0]
+        from_name = self.miso_map[self.miso_map["CEP Bus ID"] == from_label][
+            "CEP Bus Name"
+        ].values[0]
+        to_name = self.miso_map[self.miso_map["CEP Bus ID"] == to_label][
+            "CEP Bus Name"
+        ].values[0]
+
+        attribute = getattr(self, attribute_string)
+        attribute_df = pd.DataFrame(attribute.loc[df_index, :])
+        attribute_df.columns = [0]  # overwrite so matching works
+        fig, ax = plt.subplots(1, figsize=(8, 5))
+        ax = sns.heatmap(
+            self.format12x24(attribute_df, mean=True), linewidth=0.5, cmap="Reds",
+        )
+        ax.set_ylim(1, 13)
+        ax.set_ylabel("Month")
+        ax.set_xlabel("Hour Beginning")
+        ax.set_title(attribute_string + " " + from_name + " to " + to_name)
+        plt.savefig(
+            join(
+                self.results_folder,
+                attribute_string
+                + from_name
+                + "to"
+                + to_name
+                + self.casename
+                + "heatmap.jpg",
+            ),
             dpi=300,
         )
         if show:
@@ -295,6 +420,9 @@ else:
 test.geography_plot("region_lole")
 test.geography_plot("region_eue")
 test.heatmap("period_eue")
+test.panel_tx_heatmap("utilization")
+test.tx_heatmap("15", "utilization")
+test.tx_heatmap("15", "flow")
 # test.heatmap("period_lolp", mean=True)
 test.plot_zonal_loads(NREL=NREL, year_lab=NREL_year, scenario_lab=scenario_label)
 
