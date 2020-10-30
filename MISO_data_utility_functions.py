@@ -732,7 +732,7 @@ class CreateHDF5(object):
                 np.ones((self.row_len, len(self.cleaned_seams_transmission_df.index))),
                 dtype=np.float,
             )
-            * 0.0001
+            * 0.0000
         )
         self.txrecovery_np = (
             np.asarray(
@@ -849,7 +849,7 @@ class CreateHDF5(object):
         year,
         profile_types=["Utility Wind", "Distributed Solar", "Utility Solar"],
         choice="random",
-        default_ID = 393035
+        default_ID=393035,
     ):
         assert (type(choice)) == str
         choice = choice.lower()  # removes casing issues
@@ -867,7 +867,9 @@ class CreateHDF5(object):
                     ]
                     if id_list != []:
                         profile_ID = (
-                            self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
+                            self.vre_profile_df[self.get_vre_key(p)][id_list]
+                            .sum()
+                            .idxmax()
                         )
 
                 elif choice == "min":
@@ -881,7 +883,9 @@ class CreateHDF5(object):
                     ]
                     if id_list != []:
                         profile_ID = (
-                            self.vre_profile_df[self.get_vre_key(p)][id_list].sum().idxmax()
+                            self.vre_profile_df[self.get_vre_key(p)][id_list]
+                            .sum()
+                            .idxmax()
                         )
                 else:
                     profile_ID = np.random.choice(
@@ -891,7 +895,11 @@ class CreateHDF5(object):
                     )
 
                 if id_list == []:
-                    print('using default profile ID '+str(default_ID) +' due to matching problems')
+                    print(
+                        "using default profile ID "
+                        + str(default_ID)
+                        + " due to matching problems"
+                    )
                     profile_ID = default_ID
                 self.add_re_generator(p, zone, profile_ID, penetration, year)
         print("...done adding VRE profiles")
@@ -980,7 +988,7 @@ class CreateHDF5(object):
         assert (type(filename)) == str
         pras_name = filename + ".pras"
         if not os.path.exists(os.path.join(self.folder_datapath, "PRAS_files")):
-            os.mkdir(os.path.join(self.folder_datapath,"PRAS_files"))
+            os.mkdir(os.path.join(self.folder_datapath, "PRAS_files"))
         os.chdir(os.path.join(self.folder_datapath, "PRAS_files"))
         with h5py.File(pras_name, "w", track_order=True) as f:
             # attrs

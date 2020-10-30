@@ -15,7 +15,7 @@ from pylab import text
 import sys
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-folder = "testPRAS10.27"
+folder = "testPRAS10.30"
 data = join(os.environ["HOMEPATH"], "Desktop", folder)
 sys.path.insert(0, data)
 from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
@@ -23,7 +23,7 @@ from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
 NREL = False
 NREL_year, NREL_profile = 2012, ""
 
-casename = "VRE0.5_wind_2012base160%_8760_"
+casename = "VRE0.5_wind_2012base100%_8760_"
 
 miso_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "VREData")
 hifld_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "HIFLD_shapefiles")

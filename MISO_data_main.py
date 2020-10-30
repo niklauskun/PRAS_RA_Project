@@ -34,16 +34,16 @@ from MISO_data_utility_functions import (
 # general inputs
 RE_sheet = "Wind-heavy by energy"
 # RE_sheet = "More balanced by energy"
-row_len = 2208  # for HDF5 file
-slice_in_index = 3624  # 0 if you want to start on 1/1
-re_penetration = "0.5"
+row_len = 8760  # for HDF5 file
+slice_in_index = 0  # 0 if you want to start on 1/1
+re_penetration = "0.1"
 profile_year = 2012
 NREL = False
 NREL_year, NREL_profile = 2040, "EFSLoadProfile_High_Moderate"
-pras_filename = "VRE0.5_wind_2040NRELHihgModerate_2208summer"
+pras_filename = "VRE0.5_wind_2012base100%_8760"
 # fliename convention is VREscenario_REscenario_year_hours
 
-folder = "testPRAS10.27"  # whatever you name your folder when pulled from Github
+folder = "testPRAS10.30"  # whatever you name your folder when pulled from Github
 
 if slice_in_index + row_len > 8760:
     raise ValueError("cannot index beyond 8760")
