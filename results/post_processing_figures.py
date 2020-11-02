@@ -287,11 +287,17 @@ class plotter(object):
         ]
 
         l = []
+        if "lole" in attribute_string.lower():
+            list_index = 2
+        elif "eue" in attribute_string.lower():
+            list_index = 3
+        else:
+            raise ValueError("attribute must be either LOLE or EUE")
         for utility in utilities_plot_df["NAME"]:
             for k, v in self.map_dict.items():
                 for u in v[0]:
                     if u == utility:
-                        l.append(v[2])
+                        l.append(v[list_index])
         pd.set_option("mode.chained_assignment", None)  # for now to suppress warnings
         utilities_plot_df[col] = l
         return (utilities_plot_df, col)
@@ -317,7 +323,10 @@ class plotter(object):
             cmap="Reds",
             legend=True,
             cax=cax,
-            legend_kwds={"label": label + " (MWh/y)", "orientation": "horizontal"},
+            legend_kwds={
+                "label": label + " (MWh (EUE) or Hours (LOLE) /y)",
+                "orientation": "horizontal",
+            },
         )
         plt.savefig(join(self.results_folder, self.casename + label + ".jpg"), dpi=300)
         return None
@@ -420,9 +429,9 @@ else:
 test.geography_plot("region_lole")
 test.geography_plot("region_eue")
 test.heatmap("period_eue")
-test.panel_tx_heatmap("utilization")
-test.tx_heatmap("15", "utilization")
-test.tx_heatmap("15", "flow")
+test.panel_tx_heatmap("utilization")  # takes awhile
+# test.tx_heatmap("15", "utilization")
+# test.tx_heatmap("15", "flow")
 # test.heatmap("period_lolp", mean=True)
 test.plot_zonal_loads(NREL=NREL, year_lab=NREL_year, scenario_lab=scenario_label)
 
