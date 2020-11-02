@@ -36,11 +36,14 @@ RE_sheet = "Wind-heavy by energy"
 # RE_sheet = "More balanced by energy"
 row_len = 8760  # for HDF5 file
 slice_in_index = 0  # 0 if you want to start on 1/1
-re_penetration = "0.1"
+re_penetration = "0.5"
 profile_year = 2012
 NREL = False
 NREL_year, NREL_profile = 2040, "EFSLoadProfile_High_Moderate"
 pras_filename = "VRE0.5_wind_2012base100%_8760"
+load_scalar = 1  # how much to scale resulting load profile by... 1 should be default
+target_IRM = 0.2  # as a fraction
+use_target_IRM = True  #
 # fliename convention is VREscenario_REscenario_year_hours
 
 folder = "testPRAS10.30"  # whatever you name your folder when pulled from Github
@@ -157,12 +160,17 @@ if NREL:
 # add selected sceanario VRE capacity
 HDF5_data.add_all_re_profs(re_penetration, profile_year, choice="max")
 
+# irm adjustment to load, if desired
+if use_target_IRM:
+    load_scalar = HDF5_data.calc_IRM(target_IRM)
+
 # HDF5_data.add_re_generator(
-#    "Utility Wind", "LA-GULF", 261010, "0.5", 2012, overwrite_MW=100
+#    "Utility Solar", "LA-GULF", 261010, "0.1", 2012, overwrite_MW=100
 # )
 
+
 # finally, export PRAS case
-HDF5_data.write_h5pyfile(pras_filename, load_scalar=1)
+HDF5_data.write_h5pyfile(pras_filename, load_scalar=load_scalar)
 
 
 # how long did this take?

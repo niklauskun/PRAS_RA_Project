@@ -1,7 +1,7 @@
 using PRAS, FileIO, JLD, DelimitedFiles
-foldername = "testPRAS10.27" # whatever you named the folde
-casename = "VRE0.5_wind_2012base160%_8760.pras"
-casename2 = "VRE0.5_wind_2012base160%_8760_addgulfsolar.pras"
+foldername = "testPRAS10.30" # whatever you named the folde
+casename = "VRE0.5_wind_2012base100%_8760.pras"
+casename2 = "VRE0.1_wind_2012base100%_8760_addgulfsolar.pras"
 
 path = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)
 path2 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename2)
@@ -49,8 +49,8 @@ end
 ## RUN FUNCTIONS ONCE YOU HAVE LOADED THEM
 # be careful with number of samples - the choice really affects runtime (though also more samples reduces error in results)
 run_path_model(path,casename,foldername, 10000)
-run_path_elcc(path,path2,100,"26",1000)
-run_path_efc(path,path2,100,"26",1000)
+run_path_elcc(path,path2,100,"26",200000)
+run_path_efc(path,path2,100,"26",200000)
 
 
 # Old code that was run line-by-line, can be used for checking

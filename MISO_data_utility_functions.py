@@ -643,7 +643,31 @@ class CreateHDF5(object):
         generators_data["region"] = tuple(self.seams_generation_df["Bubble"])
         self.generators_data = generators_data
 
-    def create_zone_np(self):
+    def create_zone_np(self, hydroMTTR=100, wasteMTTR=100):
+        self.seams_generation_df.loc[
+            self.seams_generation_df.category == "Hydro", "Mean Time to Repair"
+        ] = hydroMTTR
+        self.seams_generation_df.loc[
+            self.seams_generation_df.category == "Waste HT_ST", "Mean Time to Repair"
+        ] = wasteMTTR
+        self.seams_generation_df.loc[
+            self.seams_generation_df.category == "Hydro", "Maintenance Rate_Band2"
+        ] = 0.0  # hydro has no maintenance for now
+
+        self.seams_generation_df["FORandMaintenance"] = (
+            self.seams_generation_df["Forced Outage Rate"]
+            + self.seams_generation_df["Maintenance Rate_Band2"]
+        )
+
+        self.seams_generation_df["recoverprob"] = (
+            1.0 / self.seams_generation_df["Mean Time to Repair"]
+        )  # recovery
+        self.seams_generation_df["failureprob"] = (
+            self.seams_generation_df["recoverprob"]
+            * 0.01
+            * self.seams_generation_df["FORandMaintenance"]
+            / (1 - 0.01 * self.seams_generation_df["FORandMaintenance"])
+        )  # failure
 
         self.capacity_np = np.asarray(
             np.ones((self.row_len, 1))
@@ -652,17 +676,13 @@ class CreateHDF5(object):
         )
         self.failure_np = np.asarray(
             np.ones((self.row_len, 1))
-            @ np.asmatrix(
-                np.asarray(self.seams_generation_df["Forced Outage Rate"] * 0.0001)
-            ),
+            @ np.asmatrix(np.asarray(self.seams_generation_df["failureprob"])),
             dtype=np.float,
         )
-        self.repair_np = (
-            np.asarray(
-                np.ones((self.row_len, len(self.seams_generation_df.index))),
-                dtype=np.float,
-            )
-            * 0.01
+        self.repair_np = np.asarray(
+            np.ones((self.row_len, 1))
+            @ np.asmatrix(np.asarray(self.seams_generation_df["recoverprob"])),
+            dtype=np.float,
         )  # @np.ones(,dtype=np.int32)
 
         ### REGIONS ###
@@ -983,6 +1003,16 @@ class CreateHDF5(object):
             self.storage_data_list, dtype=self.generators_dtype
         )
         return None
+
+    def calc_IRM(self, target_IRM):
+        peakload = self.seams_load_df.iloc[:, 1:].sum(axis=1).max()
+        ICAP = self.capacity_np.mean(axis=0).sum()  # renewables are deflated by CF
+        IRM = str(round((100.0 * ((ICAP / peakload) - 1.0)), 2))
+        print("native IRM is " + IRM + "%")
+        print("adjusting IRM to be " + str(target_IRM * 100.0) + "%")
+        return (ICAP / peakload) / (1.0 + target_IRM)  # the scalar for load
+
+        # self.seams_load_df.iloc[self.slicer : self.slicer + self.row_len, 1:]
 
     def write_h5pyfile(self, filename, load_scalar=1):
         assert (type(filename)) == str
