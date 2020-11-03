@@ -36,17 +36,18 @@ RE_sheet = "Wind-heavy by energy"
 # RE_sheet = "More balanced by energy"
 row_len = 8760  # for HDF5 file
 slice_in_index = 0  # 0 if you want to start on 1/1
-re_penetration = "0.5"
+re_penetration = "0.4"
 profile_year = 2012
 NREL = False
 NREL_year, NREL_profile = 2040, "EFSLoadProfile_High_Moderate"
-pras_filename = "VRE0.5_wind_2012base100%_8760"
+pras_filename = "VRE0.4_wind_2012base100%_8760"
 load_scalar = 1  # how much to scale resulting load profile by... 1 should be default
-target_IRM = 0.2  # as a fraction
+target_IRM = 0.15  # as a fraction
 use_target_IRM = True  #
+storage_capacity = 16000  # total storage capacity, in MW
 # fliename convention is VREscenario_REscenario_year_hours
 
-folder = "testPRAS10.30"  # whatever you name your folder when pulled from Github
+folder = "testPRAS11.3"  # whatever you name your folder when pulled from Github
 
 if slice_in_index + row_len > 8760:
     raise ValueError("cannot index beyond 8760")
@@ -79,6 +80,7 @@ SEAMS_LRZ_map["MEC"] = ["LRZ 3"]
 SEAMS_LRZ_map["IA-E"] = ["LRZ 3"]
 SEAMS_LRZ_map["CBPC-NIPCO"] = ["LRZ 3"]
 SEAMS_LRZ_map["IL-C"] = ["LRZ 4"]
+SEAMS_LRZ_map["SIPC"] = ["LRZ 4"]
 SEAMS_LRZ_map["MISO-MO"] = ["LRZ 5"]
 SEAMS_LRZ_map["AECIZ"] = ["LRZ 5"]
 SEAMS_LRZ_map["IN-S"] = ["LRZ 6"]
@@ -154,15 +156,17 @@ if NREL:
 # add a single storage resource, if desired
 # HDF5_data.add_storage_resource("MEC", 100, 3)
 
-# add a generic sized storage resource at all buses, if desired
-# HDF5_data.add_all_storage_resource(1000, 4)
-
 # add selected sceanario VRE capacity
 HDF5_data.add_all_re_profs(re_penetration, profile_year, choice="max")
 
+# add a generic sized storage resource at all buses, if desired
+HDF5_data.add_all_storage_resource(
+    storage_capacity, 6, alloc_method="prorataVRE"
+)  # now is total capacity and duration
+
 # irm adjustment to load, if desired
 if use_target_IRM:
-    load_scalar = HDF5_data.calc_IRM(target_IRM)
+    load_scalar = HDF5_data.calc_IRM(target_IRM, storage_capacity)
 
 # HDF5_data.add_re_generator(
 #    "Utility Solar", "LA-GULF", 261010, "0.1", 2012, overwrite_MW=100
