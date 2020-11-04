@@ -863,16 +863,19 @@ class CreateHDF5(object):
             (self.failure_np, np.zeros(self.row_len).reshape(self.row_len, 1))
         )
 
+        return zonal_capacity
+
     def add_all_re_profs(
         self,
         penetration,
         year,
         profile_types=["Utility Wind", "Distributed Solar", "Utility Solar"],
         choice="random",
-        default_ID=393035,
+        default_ID=481324,
     ):
         assert (type(choice)) == str
         choice = choice.lower()  # removes casing issues
+        self.re_capacity_dict = {}
         for zone in self.vre_scenario_df.index:
             print("adding VRE in zone " + zone + " to generation profiles")
             for p in profile_types:
@@ -921,23 +924,56 @@ class CreateHDF5(object):
                         + " due to matching problems"
                     )
                     profile_ID = default_ID
-                self.add_re_generator(p, zone, profile_ID, penetration, year)
+                zonal_capacity = self.add_re_generator(
+                    p, zone, profile_ID, penetration, year
+                )
+                self.re_capacity_dict[zone + "_" + p] = [zone, p, zonal_capacity]
         print("...done adding VRE profiles")
 
     def hstack_helper(self, array, value):
         return np.hstack((array, np.ones((self.row_len, 1)) * value))
 
-    def add_all_storage_resource(self, capacity, duration):
+    def add_all_storage_resource(self, total_capacity, duration, alloc_method="equal"):
+        load_fracs = (
+            self.seams_load_df.iloc[:, 1:].sum(axis=0)
+            / self.seams_load_df.iloc[:, 1:].sum(axis=0).sum()
+        )
+        # vre_fracs
+        vre_capacity_df = pd.DataFrame.from_dict(
+            self.re_capacity_dict, orient="index", columns=["zone", "type", "capacity"]
+        )
+        zonal_vre_capacity_df = (
+            vre_capacity_df[["zone", "capacity"]].groupby("zone").sum()
+        )
+        vre_fracs = (
+            zonal_vre_capacity_df.capacity / zonal_vre_capacity_df.capacity.sum()
+        )
         for zone in self.vre_scenario_df.index:
+
+            zonal_load_frac = load_fracs.loc[zone]
+            zonal_vre_frac = vre_fracs.loc[zone]
+            # self.vre_scenario_df.at[zone, penetration_col]
+
+            if alloc_method == "equal":
+                capacity = total_capacity / len(self.vre_scenario_df.index)
+            elif alloc_method == "prorataload":
+                capacity = total_capacity * load_fracs.loc[zone]
+            elif alloc_method == "prorataVRE":
+                capacity = total_capacity * zonal_vre_frac
+            else:
+                raise ValueError(
+                    "Capacity alloc_method must be equal (default) or user-input as prorataload or prorataVRE"
+                )
             print(
                 "adding "
-                + str(capacity)
+                + str(round(capacity, 2))
                 + "MW, "
                 + str(duration)
                 + "-hour storage in zone "
                 + zone
                 + " to storage profiles"
             )
+
             self.add_storage_resource(zone, capacity, duration)
 
     def add_storage_resource(
@@ -1004,9 +1040,10 @@ class CreateHDF5(object):
         )
         return None
 
-    def calc_IRM(self, target_IRM):
+    def calc_IRM(self, target_IRM, storage_capacity):
         peakload = self.seams_load_df.iloc[:, 1:].sum(axis=1).max()
         ICAP = self.capacity_np.mean(axis=0).sum()  # renewables are deflated by CF
+        ICAP += storage_capacity  # add the storage GW
         IRM = str(round((100.0 * ((ICAP / peakload) - 1.0)), 2))
         print("native IRM is " + IRM + "%")
         print("adjusting IRM to be " + str(target_IRM * 100.0) + "%")
