@@ -36,16 +36,16 @@ RE_sheet = "Wind-heavy by energy"
 # RE_sheet = "More balanced by energy"
 row_len = 8760  # for HDF5 file
 slice_in_index = 0  # 0 if you want to start on 1/1
-re_penetration = "0.4"
+re_penetration = "0.2"
 profile_year = 2012
 NREL = False
-NREL_year, NREL_profile = 2040, "EFSLoadProfile_High_Moderate"
-pras_filename = "VRE0.4_wind_2012base100%_8760"
+NREL_year, NREL_profile = 2040, "EFSLoadProfile_Reference_Moderate"
+pras_filename = "VRE0.2_wind_2012base100%_8760_18%IRM_nostorage"
 load_scalar = 1  # how much to scale resulting load profile by... 1 should be default
-target_IRM = 0.15  # as a fraction
+target_IRM = 0.18  # as a fraction
 use_target_IRM = True  #
-storage_capacity = 16000  # total storage capacity, in MW
-# fliename convention is VREscenario_REscenario_year_hours
+storage_capacity = 0  # total storage capacity, in MW
+# fliename convention is VREscenario_REscenario_year_hours_RMmodifier_storage
 
 folder = "testPRAS11.3"  # whatever you name your folder when pulled from Github
 
@@ -156,8 +156,10 @@ if NREL:
 # add a single storage resource, if desired
 # HDF5_data.add_storage_resource("MEC", 100, 3)
 
+# HDF5_data.calc_top_N_hours_load(8)
+
 # add selected sceanario VRE capacity
-HDF5_data.add_all_re_profs(re_penetration, profile_year, choice="max")
+HDF5_data.add_all_re_profs(re_penetration, profile_year, choice="random", N=15)
 
 # add a generic sized storage resource at all buses, if desired
 HDF5_data.add_all_storage_resource(
@@ -169,7 +171,7 @@ if use_target_IRM:
     load_scalar = HDF5_data.calc_IRM(target_IRM, storage_capacity)
 
 # HDF5_data.add_re_generator(
-#    "Utility Solar", "LA-GULF", 261010, "0.1", 2012, overwrite_MW=100
+#    "Utility Wind", "LA-GULF", 261010, "0.1", 2012, 8, overwrite_MW=100
 # )
 
 

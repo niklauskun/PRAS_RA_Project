@@ -20,6 +20,7 @@ import h5py
 import requests
 from zipfile import ZipFile
 import subprocess, sys
+from datetime import datetime
 
 # patch handlers
 # https://stackoverflow.com/questions/40672088/matplotlib-customize-the-legend-to-show-squares-instead-of-rectangles
@@ -792,7 +793,7 @@ class CreateHDF5(object):
             return "Fixed"
 
     def add_re_generator(
-        self, name, zone, profile_ID, penetration, year, overwrite_MW=0
+        self, name, zone, profile_ID, penetration, year, N, overwrite_MW=0
     ):
 
         zone_int = np.asarray(
@@ -839,12 +840,34 @@ class CreateHDF5(object):
             (active_profile_df.year == year) & (active_profile_df.month_day != "2-29")
         ]
 
+        if hasattr(self, "topNloads"):
+            pass
+        else:
+            self.topNloads = self.calc_top_N_hours_load(N)
+            self.topNdatetimes = [
+                str(
+                    datetime.strptime(str(x), "%Y-%m-%d %H:%M:%S").strftime(
+                        "%m-%d-%Y %I:%M%p"
+                    )
+                )
+                for x in self.topNloads["Date"]
+            ]
+        # top N CF
+        np_topN = np.asarray(year_profile_df.loc[self.topNdatetimes, str(profile_ID)])
+        print(
+            name
+            + " CF in top "
+            + str(N)
+            + " hours is: "
+            + str(round(np_topN.mean(), 3))
+        )
         # now grab the profile using the key, taking only the first row_len entries
         np_profile = np.asarray(
             year_profile_df.loc[:, str(profile_ID)][
                 self.slicer : self.slicer + self.row_len
             ]
         )
+
         # and scale it by the capacity scenario
         zonal_capacity = self.vre_scenario_df.at[zone, penetration_col]
         final_capacity_array = np_profile * zonal_capacity  # scales profile
@@ -872,6 +895,7 @@ class CreateHDF5(object):
         profile_types=["Utility Wind", "Distributed Solar", "Utility Solar"],
         choice="random",
         default_ID=481324,
+        N=8,
     ):
         assert (type(choice)) == str
         choice = choice.lower()  # removes casing issues
@@ -911,11 +935,20 @@ class CreateHDF5(object):
                             .idxmax()
                         )
                 else:
-                    profile_ID = np.random.choice(
-                        self.miso_geography_df[
-                            self.miso_geography_df.FINAL_SEAMS_ZONE == zone
-                        ].Name.unique()
-                    )
+                    try:
+                        profile_ID = np.random.choice(
+                            self.miso_geography_df[
+                                self.miso_geography_df.FINAL_SEAMS_ZONE == zone
+                            ].Name.unique()
+                        )
+                    except ValueError:
+                        print(
+                            "using default profile ID "
+                            + str(default_ID)
+                            + " due to matching problems"
+                        )
+                        profile_ID = default_ID
+                    id_list = ["blank"]
 
                 if id_list == []:
                     print(
@@ -925,7 +958,7 @@ class CreateHDF5(object):
                     )
                     profile_ID = default_ID
                 zonal_capacity = self.add_re_generator(
-                    p, zone, profile_ID, penetration, year
+                    p, zone, profile_ID, penetration, year, N
                 )
                 self.re_capacity_dict[zone + "_" + p] = [zone, p, zonal_capacity]
         print("...done adding VRE profiles")
@@ -1050,6 +1083,29 @@ class CreateHDF5(object):
         return (ICAP / peakload) / (1.0 + target_IRM)  # the scalar for load
 
         # self.seams_load_df.iloc[self.slicer : self.slicer + self.row_len, 1:]
+
+    def calc_top_N_hours_load(self, N):
+        load_df = self.seams_load_df.iloc[:, 1:].sum(axis=1).to_frame()
+        datetimes = pd.to_datetime(self.seams_load_df.Date, infer_datetime_format=True)
+
+        datetime_list = [str(x.month) + "-" + str(x.day) for x in datetimes]
+        load_df["datetime"] = datetime_list
+        # print(load_df.groupby("datetime").max().nlargest(N))
+        grouped_load_df = (
+            load_df.groupby("datetime").max().sort_values(by=[0], ascending=False)
+        )  # hourly maxes
+        topN_hours = grouped_load_df.iloc[:N, :]
+        topN_hours["Date"] = list(
+            self.seams_load_df[
+                self.seams_load_df.index.isin(
+                    list(load_df[load_df[0].isin(list(topN_hours[0]))].index)
+                )
+            ].Date
+        )  # Load dates
+        # could also append 8760-based index
+        # group day-level max?
+        # rank and select top N?
+        return topN_hours
 
     def write_h5pyfile(self, filename, load_scalar=1):
         assert (type(filename)) == str
