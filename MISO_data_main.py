@@ -47,7 +47,7 @@ use_target_IRM = True  #
 storage_capacity = 0  # total storage capacity, in MW
 # fliename convention is VREscenario_REscenario_year_hours_RMmodifier_storage
 
-folder = "testPRAS11.3"  # whatever you name your folder when pulled from Github
+folder = "PRAS_RA_Project"  # whatever you name your folder when pulled from Github
 
 if slice_in_index + row_len > 8760:
     raise ValueError("cannot index beyond 8760")
