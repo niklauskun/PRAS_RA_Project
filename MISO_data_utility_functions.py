@@ -476,6 +476,7 @@ class LoadMISOData(object):
             )
 
     def returndata(self):
+        self.match_gdf[['Lat','Lon','FINAL_SEAMS_ZONE']].to_csv(os.path.join(self.folder_datapath, "miso_locs_to_SEAMS_zones.csv"))
         return self.match_gdf
 
 

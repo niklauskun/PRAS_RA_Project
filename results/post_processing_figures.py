@@ -14,8 +14,9 @@ import descartes
 from pylab import text
 import sys
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from shapely.geometry import Point, LineString
 
-folder = "testPRAS10.30"
+folder = "PRAS_RA_Project"
 data = join(os.environ["HOMEPATH"], "Desktop", folder)
 sys.path.insert(0, data)
 from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
@@ -266,6 +267,70 @@ class plotter(object):
             plt.show()
         return None
 
+    def geography_tx_plot(self, attribute_string, CRS=4326):
+        zone_loc = pd.read_csv(os.path.join(os.environ["HOMEPATH"], "Desktop", folder,"miso_locs_to_SEAMS_zones.csv"))
+        zone_centroid = pd.DataFrame(columns=['Lat', 'Lon', 'Zone'])
+        for i in list(zone_loc["FINAL_SEAMS_ZONE"].unique()):
+            centroid_Lat = zone_loc[zone_loc["FINAL_SEAMS_ZONE"]==i]['Lat'].mean()
+            centroid_Lon = zone_loc[zone_loc["FINAL_SEAMS_ZONE"]==i]['Lon'].mean()
+            zone_centroid = zone_centroid.append([{'Lat':centroid_Lat,'Lon':centroid_Lon,'Zone':i}], ignore_index=True)
+        zone_centroid_gdf = gpd.GeoDataFrame(zone_centroid, geometry=gpd.points_from_xy(zone_centroid['Lon'], zone_centroid['Lat']))
+        zone_centroid_gdf.crs = "EPSG:" + str(CRS)
+        zone_centroid_gdf.to_crs(epsg=CRS, inplace=True)
+        #create zone centroid
+        assert (type(attribute_string)) == str
+        line_utilization = pd.DataFrame(columns=['from_name', 'to_name', 'line_loc', 'expected_utilization'])
+        for i, v in enumerate(list(self.miso_tx.Line.unique())[:-1]):
+            if i % 10 == 0:
+                print(
+                    str(i)
+                    + " out of "
+                    + str(len(list(self.miso_tx.Line.unique())))
+                    + " lines are plotted"
+                )
+            df_index = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))].index[0]
+            from_label = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))][
+                "From"
+            ].values[
+                0
+            ]  # [0]
+            to_label = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))][
+                "To"
+            ].values[
+                0
+            ]  # [0]
+            from_name = self.miso_map[self.miso_map["CEP Bus ID"] == from_label][
+                "CEP Bus Name"
+            ].values[0]
+            to_name = self.miso_map[self.miso_map["CEP Bus ID"] == to_label][
+                "CEP Bus Name"
+            ].values[0]
+            try:
+                from_name_loc = Point(zone_centroid[zone_centroid.Zone == from_name].Lon, zone_centroid[zone_centroid.Zone == from_name].Lat)
+                to_name_loc = Point(zone_centroid[zone_centroid.Zone == to_name].Lon, zone_centroid[zone_centroid.Zone == to_name].Lat)
+            except TypeError:
+                print("No unit in",from_name,"or",to_name,"...")
+            line_loc = LineString([from_name_loc,to_name_loc])
+            attribute = getattr(self, attribute_string)
+            attribute_df = pd.DataFrame(attribute.loc[df_index, :])
+            attribute_df.columns = [0]  # overwrite so matching works
+            expected_utilization = attribute_df[0].mean()
+            line_utilization = line_utilization.append([{'from_name':from_name,'to_name':to_name,'line_loc':line_loc,'expected_utilization':expected_utilization}], ignore_index=True)
+        line_utilization_gdf = gpd.GeoDataFrame(line_utilization, geometry=line_utilization.line_loc)
+        line_utilization_gdf.crs = "EPSG:" + str(CRS)
+        line_utilization_gdf.to_crs(epsg=CRS, inplace=True)
+        #create lines expected utilization dataframe
+        fig, ax = plt.subplots(1, figsize=(8, 8))
+        myaxes = plt.axes()
+        myaxes.set_ylim([23, 50])
+        myaxes.set_xlim([-108, -82])
+        zone_centroid_gdf.plot()
+        line_utilization_gdf.plot()
+        self.states_map.plot(ax=myaxes, edgecolor="k", facecolor="None")
+
+        plt.savefig(join("test" + ".jpg"), dpi=300)
+        return None
+
     def load_utility_df(self, attribute_string):
 
         col = attribute_string[attribute_string.find("_") + 1 :].upper()
@@ -425,7 +490,7 @@ if NREL:
 else:
     scenario_label = ""
 
-
+test.geography_tx_plot("utilization")
 test.geography_plot("region_lole")
 test.geography_plot("region_eue")
 test.heatmap("period_eue")
