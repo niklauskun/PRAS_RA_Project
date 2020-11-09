@@ -1,6 +1,6 @@
 using PRAS, FileIO, JLD, DelimitedFiles
-foldername = "testPRAS10.30" # whatever you named the folde
-casename = "VRE0.5_wind_2012base100%_8760.pras"
+foldername = "testPRAS11.9" # whatever you named the folde
+casename = "VRE0.2_wind_2012base100%_8760_nativeIRM_nostorage.pras"
 casename2 = "VRE0.1_wind_2012base100%_8760_addgulfsolar.pras"
 
 path = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)

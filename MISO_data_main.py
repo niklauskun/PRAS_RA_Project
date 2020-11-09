@@ -40,14 +40,14 @@ re_penetration = "0.2"
 profile_year = 2012
 NREL = False
 NREL_year, NREL_profile = 2040, "EFSLoadProfile_Reference_Moderate"
-pras_filename = "VRE0.2_wind_2012base100%_8760_nativeIRM_nostorage_addMECsolar"
+pras_filename = "VRE0.2_wind_2012base100%_8760_nativeIRM_nostorage"
 load_scalar = 1  # how much to scale resulting load profile by... 1 should be default
 target_IRM = 0.18  # as a fraction
 use_target_IRM = False  #
 storage_capacity = 0  # total storage capacity, in MW
 # fliename convention is VREscenario_REscenario_year_hours_RMmodifier_storage
 
-folder = "testPRAS11.3"  # whatever you name your folder when pulled from Github
+folder = "testPRAS11.9"  # whatever you name your folder when pulled from Github
 
 if slice_in_index + row_len > 8760:
     raise ValueError("cannot index beyond 8760")
@@ -157,7 +157,7 @@ if NREL:
 
 # add selected sceanario VRE capacity
 HDF5_data.add_all_re_profs(
-    re_penetration, profile_year, choice="max", N=15, hybridize=True
+    re_penetration, profile_year, choice="max", N=15, hybridize=False
 )
 
 # add a generic sized storage resource at all buses, if desired
