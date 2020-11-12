@@ -476,7 +476,9 @@ class LoadMISOData(object):
             )
 
     def returndata(self):
-        self.match_gdf[['Lat','Lon','FINAL_SEAMS_ZONE']].to_csv(os.path.join(self.folder_datapath, "miso_locs_to_SEAMS_zones.csv"))
+        self.match_gdf[["Lat", "Lon", "FINAL_SEAMS_ZONE"]].to_csv(
+            os.path.join(self.folder_datapath, "miso_locs_to_SEAMS_zones.csv")
+        )  # added by nik
         return self.match_gdf
 
 
@@ -796,7 +798,6 @@ class CreateHDF5(object):
     def add_re_generator(
         self, name, zone, profile_ID, penetration, year, N, overwrite_MW=0
     ):
-
         zone_int = np.asarray(
             self.seams_mapping_df[self.seams_mapping_df["CEP Bus Name"] == zone][
                 "CEP Bus ID"
@@ -897,6 +898,9 @@ class CreateHDF5(object):
         choice="random",
         default_ID=481324,
         N=8,
+        hybridize=False,
+        hybrid_storage_capacity=100,
+        hybrid_storage_duration=6,
     ):
         assert (type(choice)) == str
         choice = choice.lower()  # removes casing issues
@@ -962,6 +966,18 @@ class CreateHDF5(object):
                     p, zone, profile_ID, penetration, year, N
                 )
                 self.re_capacity_dict[zone + "_" + p] = [zone, p, zonal_capacity]
+                if hybridize:
+                    self.add_hybridized_resource(
+                        hybrid_storage_capacity, hybrid_storage_duration
+                    )
+                    print(
+                        "this resource was hybridized with "
+                        + str(hybrid_storage_capacity)
+                        + "MW, "
+                        + str(hybrid_storage_capacity * hybrid_storage_duration)
+                        + "MWh of storage"
+                    )
+
         print("...done adding VRE profiles")
 
     def hstack_helper(self, array, value):
@@ -1027,9 +1043,14 @@ class CreateHDF5(object):
                 "CEP Bus ID"
             ]
         )[0]
+
         name = zone.replace(" ", "") + "_Storage_" + str(duration) + "hour"
         # add in name, zone of storage resource
         if hasattr(self, "storage_data_list"):
+            # conditional to ensure names are unique
+            existing_names = [v[0] for v in self.storage_data_list]
+            if zone in existing_names:
+                zone += "_2"
             self.storage_data_list.append((zone, name, zone_int))
             self.storage_charge_capacity_np = self.hstack_helper(
                 self.storage_charge_capacity_np, capacity
@@ -1071,6 +1092,97 @@ class CreateHDF5(object):
             self.storage_fail_np = np.ones((self.row_len, 1)) * p_fail
         self.storage_data = np.asarray(
             self.storage_data_list, dtype=self.generators_dtype
+        )
+        return None
+
+    def add_hybridized_resource(
+        self,
+        storage_capacity,
+        storage_duration,
+        charge_efficiency=0.9,
+        discharge_efficiency=1,
+        carryover_efficiency=1.0,
+        p_repair=1.0,
+        p_fail=0.0,
+    ):
+        # by default this function works backwards through renewable generators, popping them off and hybridizing them
+
+        # grab generator data, convert to hybrid format
+        gen = self.generators_data[-1]  # grab the final element
+        gen[0] += "_Hybrid"
+        gen[1] += "_Hybrid"
+        # zone_number = gen[2] #decide if there is a better way to subselect generator to pull
+        self.generators_data = self.generators_data[:-1]
+        # break
+        # grab VRE output, failure, recovery probabilities
+        gen_output = self.capacity_np[:, -1].reshape(
+            self.row_len, 1
+        )  # is reshape needed?
+        gen_capacity = self.capacity_np[:, -1].max()
+        self.capacity_np = self.capacity_np[:, :-1]
+
+        # now create the generator-storages thing
+        if hasattr(self, "hybrid_data_list"):
+            self.hybrid_data_list.append(gen)
+            self.hybrid_inflow_np = np.hstack((self.hybrid_inflow_np, gen_output))
+            self.hybrid_gridwithdrawalcapacity_np = self.hstack_helper(
+                self.hybrid_gridwithdrawalcapacity_np, gen_capacity
+            )
+            self.hybrid_gridinjectioncapacity_np = self.hstack_helper(
+                self.hybrid_gridinjectioncapacity_np, gen_capacity
+            )
+            self.hybrid_charge_capacity_np = self.hstack_helper(
+                self.hybrid_charge_capacity_np, storage_capacity
+            )
+            self.hybrid_discharge_capacity_np = self.hstack_helper(
+                self.hybrid_discharge_capacity_np, storage_capacity
+            )
+            self.hybrid_energy_np = self.hstack_helper(
+                self.hybrid_energy_np, storage_capacity * storage_duration
+            )
+            self.hybrid_discharge_efficiency_np = self.hstack_helper(
+                self.hybrid_discharge_efficiency_np, discharge_efficiency
+            )
+            self.hybrid_charge_efficiency_np = self.hstack_helper(
+                self.hybrid_charge_efficiency_np, charge_efficiency
+            )
+            self.hybrid_carryover_efficiency_np = self.hstack_helper(
+                self.hybrid_carryover_efficiency_np, carryover_efficiency
+            )
+            self.hybrid_repair_np = self.hstack_helper(self.hybrid_repair_np, p_repair)
+            self.hybrid_fail_np = self.hstack_helper(self.hybrid_fail_np, p_fail)
+        else:
+            self.hybrid_data_list = [gen]
+            self.hybrid_inflow_np = gen_output  # reshape?
+            self.hybrid_gridwithdrawalcapacity_np = (
+                np.ones((self.row_len, 1)) * gen_capacity
+            )
+            self.hybrid_gridinjectioncapacity_np = (
+                np.ones((self.row_len, 1))
+            ) * gen_capacity
+            self.hybrid_charge_capacity_np = (
+                np.ones((self.row_len, 1)) * storage_capacity
+            )
+            self.hybrid_discharge_capacity_np = (
+                np.ones((self.row_len, 1)) * storage_capacity
+            )
+            self.hybrid_energy_np = (
+                np.ones((self.row_len, 1)) * storage_capacity * storage_duration
+            )
+            self.hybrid_discharge_efficiency_np = (
+                np.ones((self.row_len, 1)) * discharge_efficiency
+            )
+            self.hybrid_charge_efficiency_np = (
+                np.ones((self.row_len, 1)) * charge_efficiency
+            )
+            self.hybrid_carryover_efficiency_np = (
+                np.ones((self.row_len, 1)) * carryover_efficiency
+            )
+            self.hybrid_repair_np = np.ones((self.row_len, 1)) * p_repair
+            self.hybrid_fail_np = np.ones((self.row_len, 1)) * p_fail
+
+        self.hybrid_data = np.asarray(
+            self.hybrid_data_list, dtype=self.generators_dtype
         )
         return None
 
@@ -1138,6 +1250,8 @@ class CreateHDF5(object):
 
             # generators
             generators_group = f.create_group("generators")
+            print(self.generators_data)
+            print("...gendataprinted")
             generators_group.create_dataset(
                 "_core", data=self.generators_data
             )  # gcore =
@@ -1188,6 +1302,58 @@ class CreateHDF5(object):
                 )
                 storages_group.create_dataset(
                     "repairprobability", data=self.storage_repair_np, dtype=np.float
+                )
+            # generator-storages, if they exist
+            if hasattr(self, "hybrid_data"):
+                print(self.hybrid_data)
+                generatorstorages_group = f.create_group("generatorstorages")
+                generatorstorages_group.create_dataset("_core", data=self.hybrid_data)
+                generatorstorages_group.create_dataset(
+                    "inflow", data=self.hybrid_inflow_np, dtype=np.int32
+                )
+                generatorstorages_group.create_dataset(
+                    "gridwithdrawalcapacity",
+                    data=self.hybrid_gridwithdrawalcapacity_np,
+                    dtype=np.int32,
+                )
+                generatorstorages_group.create_dataset(
+                    "gridinjectioncapacity",
+                    data=self.hybrid_gridinjectioncapacity_np,
+                    dtype=np.int32,
+                )
+                generatorstorages_group.create_dataset(
+                    "chargecapacity",
+                    data=self.hybrid_charge_capacity_np,
+                    dtype=np.int32,
+                )
+                generatorstorages_group.create_dataset(
+                    "dischargecapacity",
+                    data=self.hybrid_discharge_capacity_np,
+                    dtype=np.int32,
+                )
+                generatorstorages_group.create_dataset(
+                    "energycapacity", data=self.hybrid_energy_np, dtype=np.int32
+                )
+                generatorstorages_group.create_dataset(
+                    "chargeefficiency",
+                    data=self.hybrid_charge_efficiency_np,
+                    dtype=np.float,
+                )
+                generatorstorages_group.create_dataset(
+                    "dischargeefficiency",
+                    data=self.hybrid_discharge_efficiency_np,
+                    dtype=np.float,
+                )
+                generatorstorages_group.create_dataset(
+                    "carryoverefficiency",
+                    data=self.hybrid_carryover_efficiency_np,
+                    dtype=np.float,
+                )
+                generatorstorages_group.create_dataset(
+                    "failureprobability", data=self.hybrid_fail_np, dtype=np.float
+                )
+                generatorstorages_group.create_dataset(
+                    "repairprobability", data=self.hybrid_repair_np, dtype=np.float
                 )
             # interfaces
             interfaces_group = f.create_group("interfaces")

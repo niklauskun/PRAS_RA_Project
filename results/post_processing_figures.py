@@ -16,7 +16,7 @@ import sys
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from shapely.geometry import Point, LineString
 
-folder = "PRAS_RA_Project"
+folder = "testPRAS11.9"
 data = join(os.environ["HOMEPATH"], "Desktop", folder)
 sys.path.insert(0, data)
 from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
@@ -24,7 +24,7 @@ from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
 NREL = False
 NREL_year, NREL_profile = 2012, ""
 
-casename = "VRE0.5_wind_2012base100%_8760_"
+casename = "VRE0.2_wind_2012base100%_8760_nativeIRM_nostorage_"
 
 miso_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "VREData")
 hifld_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "HIFLD_shapefiles")
@@ -113,6 +113,19 @@ class plotter(object):
     def data_check(self):
         # runs some checks on data formatting from uploads
         return self.region_df
+
+    def create_month_hour_df(self, df, month="NA", hour="NA"):
+        df["Date"] = list(self.miso_loads["Date"])
+        df["Month"] = [
+            int(re.findall(r"-(\d+)-", str(d))[0]) for d in df["Date"].values
+        ]
+        df["HourBegin"] = df.index.values % 24
+        if type(month == int):
+            df = df[df.Month == month]
+        if type(hour == int):
+            df = df[df.HourBegin == hour]
+
+        return df
 
     def format12x24(self, df, mean=False):
 
@@ -268,18 +281,36 @@ class plotter(object):
         return None
 
     def geography_tx_plot(self, attribute_string, CRS=4326):
-        zone_loc = pd.read_csv(os.path.join(os.environ["HOMEPATH"], "Desktop", folder,"miso_locs_to_SEAMS_zones.csv"))
-        zone_centroid = pd.DataFrame(columns=['Lat', 'Lon', 'Zone'])
+        capacity_list = list(
+            self.miso_tx.iloc[: len(self.miso_tx.Line.unique()) - 1, :].FW
+        )  # grabs the fw capacity of lines
+        zone_loc = pd.read_csv(
+            os.path.join(
+                os.environ["HOMEPATH"],
+                "Desktop",
+                folder,
+                "miso_locs_to_SEAMS_zones.csv",
+            )
+        )
+        zone_centroid = pd.DataFrame(columns=["Lat", "Lon", "Zone"])
         for i in list(zone_loc["FINAL_SEAMS_ZONE"].unique()):
-            centroid_Lat = zone_loc[zone_loc["FINAL_SEAMS_ZONE"]==i]['Lat'].mean()
-            centroid_Lon = zone_loc[zone_loc["FINAL_SEAMS_ZONE"]==i]['Lon'].mean()
-            zone_centroid = zone_centroid.append([{'Lat':centroid_Lat,'Lon':centroid_Lon,'Zone':i}], ignore_index=True)
-        zone_centroid_gdf = gpd.GeoDataFrame(zone_centroid, geometry=gpd.points_from_xy(zone_centroid['Lon'], zone_centroid['Lat']))
+            centroid_Lat = zone_loc[zone_loc["FINAL_SEAMS_ZONE"] == i]["Lat"].mean()
+            centroid_Lon = zone_loc[zone_loc["FINAL_SEAMS_ZONE"] == i]["Lon"].mean()
+            zone_centroid = zone_centroid.append(
+                [{"Lat": centroid_Lat, "Lon": centroid_Lon, "Zone": i}],
+                ignore_index=True,
+            )
+        zone_centroid_gdf = gpd.GeoDataFrame(
+            zone_centroid,
+            geometry=gpd.points_from_xy(zone_centroid["Lon"], zone_centroid["Lat"]),
+        )
         zone_centroid_gdf.crs = "EPSG:" + str(CRS)
         zone_centroid_gdf.to_crs(epsg=CRS, inplace=True)
-        #create zone centroid
+        # create zone centroid
         assert (type(attribute_string)) == str
-        line_utilization = pd.DataFrame(columns=['from_name', 'to_name', 'line_loc', 'expected_utilization'])
+        line_utilization = pd.DataFrame(
+            columns=["from_name", "to_name", "line_loc", "expected_utilization"]
+        )
         for i, v in enumerate(list(self.miso_tx.Line.unique())[:-1]):
             if i % 10 == 0:
                 print(
@@ -306,29 +337,64 @@ class plotter(object):
                 "CEP Bus Name"
             ].values[0]
             try:
-                from_name_loc = Point(zone_centroid[zone_centroid.Zone == from_name].Lon, zone_centroid[zone_centroid.Zone == from_name].Lat)
-                to_name_loc = Point(zone_centroid[zone_centroid.Zone == to_name].Lon, zone_centroid[zone_centroid.Zone == to_name].Lat)
+                from_name_loc = Point(
+                    zone_centroid[zone_centroid.Zone == from_name].Lon,
+                    zone_centroid[zone_centroid.Zone == from_name].Lat,
+                )
+                to_name_loc = Point(
+                    zone_centroid[zone_centroid.Zone == to_name].Lon,
+                    zone_centroid[zone_centroid.Zone == to_name].Lat,
+                )
             except TypeError:
-                print("No unit in",from_name,"or",to_name,"...")
-            line_loc = LineString([from_name_loc,to_name_loc])
+                print("No unit in", from_name, "or", to_name, "...")
+            line_loc = LineString([from_name_loc, to_name_loc])
             attribute = getattr(self, attribute_string)
             attribute_df = pd.DataFrame(attribute.loc[df_index, :])
             attribute_df.columns = [0]  # overwrite so matching works
+            attribute_df = self.create_month_hour_df(attribute_df, month=7, hour=15)
             expected_utilization = attribute_df[0].mean()
-            line_utilization = line_utilization.append([{'from_name':from_name,'to_name':to_name,'line_loc':line_loc,'expected_utilization':expected_utilization}], ignore_index=True)
-        line_utilization_gdf = gpd.GeoDataFrame(line_utilization, geometry=line_utilization.line_loc)
+            line_utilization = line_utilization.append(
+                [
+                    {
+                        "from_name": from_name,
+                        "to_name": to_name,
+                        "line_loc": line_loc,
+                        "expected_utilization": expected_utilization,
+                    }
+                ],
+                ignore_index=True,
+            )
+        line_utilization_gdf = gpd.GeoDataFrame(
+            line_utilization, geometry=line_utilization.line_loc
+        )
+        line_utilization_gdf["capacity"] = capacity_list
+        line_utilization_gdf["MW"] = (
+            line_utilization_gdf.capacity * line_utilization_gdf.expected_utilization
+        )
         line_utilization_gdf.crs = "EPSG:" + str(CRS)
         line_utilization_gdf.to_crs(epsg=CRS, inplace=True)
-        #create lines expected utilization dataframe
+        # create lines expected utilization dataframe
         fig, ax = plt.subplots(1, figsize=(8, 8))
         myaxes = plt.axes()
-        myaxes.set_ylim([23, 50])
-        myaxes.set_xlim([-108, -82])
-        zone_centroid_gdf.plot()
-        line_utilization_gdf.plot()
+        myaxes.set_ylim([28, 50])
+        myaxes.set_xlim([-100, -82])
+        # print(zone_centroid_gdf)
+        # print(line_utilization_gdf)
+        zone_centroid_gdf.plot(ax=myaxes, color="b")
+        # line_utilization_gdf.plot(ax=myaxes, color="r")
         self.states_map.plot(ax=myaxes, edgecolor="k", facecolor="None")
 
-        plt.savefig(join("test" + ".jpg"), dpi=300)
+        linewidths = list(line_utilization_gdf.MW)
+        linewidths_2 = list(line_utilization_gdf.capacity)
+        for lw, lw2 in zip(linewidths, linewidths_2):
+            line_utilization_gdf[line_utilization_gdf.MW == lw].plot(
+                lw=lw2 * 0.001, ax=myaxes, color="k", zorder=1, alpha=0.3
+            )
+            line_utilization_gdf[line_utilization_gdf.MW == lw].plot(
+                lw=lw * 0.005, ax=myaxes, color="r", zorder=2
+            )
+
+        plt.savefig(join(self.results_folder, "test" + ".jpg"), dpi=300)
         return None
 
     def load_utility_df(self, attribute_string):
@@ -494,7 +560,7 @@ test.geography_tx_plot("utilization")
 test.geography_plot("region_lole")
 test.geography_plot("region_eue")
 test.heatmap("period_eue")
-test.panel_tx_heatmap("utilization")  # takes awhile
+# test.panel_tx_heatmap("utilization")  # takes awhile
 # test.tx_heatmap("15", "utilization")
 # test.tx_heatmap("15", "flow")
 # test.heatmap("period_lolp", mean=True)
