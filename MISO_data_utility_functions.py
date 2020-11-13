@@ -647,7 +647,8 @@ class CreateHDF5(object):
         generators_data["region"] = tuple(self.seams_generation_df["Bubble"])
         self.generators_data = generators_data
 
-    def create_zone_np(self, hydroMTTR=100, wasteMTTR=100):
+    def create_zone_np(self, hydroMTTR=100, wasteMTTR=100, tx_scalar=1.0):
+        assert tx_scalar >= 0.0  # must be non-negative
         self.seams_generation_df.loc[
             self.seams_generation_df.category == "Hydro", "Mean Time to Repair"
         ] = hydroMTTR
@@ -716,12 +717,12 @@ class CreateHDF5(object):
         )
         self.interfaces_data = interfaces_data
 
-        self.txfrom_np = np.asarray(
+        self.txfrom_np = tx_scalar * np.asarray(
             np.ones((self.row_len, 1))
             @ np.asmatrix(np.asarray(self.cleaned_seams_transmission_df["FW"])),
             dtype=np.int32,
         )
-        self.txto_np = np.asarray(
+        self.txto_np = tx_scalar * np.asarray(
             np.ones((self.row_len, 1))
             @ np.asmatrix(np.asarray(self.cleaned_seams_transmission_df["BW"])),
             dtype=np.int32,
@@ -806,13 +807,9 @@ class CreateHDF5(object):
         penetration_col = name + " " + penetration
         generators_data_list = list(self.generators_data)
         if overwrite_MW != 0:
-
+            # zone.replace(" ", "") + name.replace(" ", "") + "2"
             generators_data_list.append(
-                (
-                    zone.replace(" ", "") + name.replace(" ", "") + "2",
-                    name.replace(" ", "_"),
-                    zone_int,
-                )
+                ("z_generic", name.replace(" ", "_"), zone_int,)
             )
         else:
             generators_data_list.append(
@@ -1050,7 +1047,8 @@ class CreateHDF5(object):
             # conditional to ensure names are unique
             existing_names = [v[0] for v in self.storage_data_list]
             if zone in existing_names:
-                zone += "_2"
+                # zone += "_2"
+                zone = "z_generic"
             self.storage_data_list.append((zone, name, zone_int))
             self.storage_charge_capacity_np = self.hstack_helper(
                 self.storage_charge_capacity_np, capacity
@@ -1250,7 +1248,7 @@ class CreateHDF5(object):
 
             # generators
             generators_group = f.create_group("generators")
-            print(self.generators_data)
+
             print("...gendataprinted")
             generators_group.create_dataset(
                 "_core", data=self.generators_data
@@ -1305,7 +1303,7 @@ class CreateHDF5(object):
                 )
             # generator-storages, if they exist
             if hasattr(self, "hybrid_data"):
-                print(self.hybrid_data)
+
                 generatorstorages_group = f.create_group("generatorstorages")
                 generatorstorages_group.create_dataset("_core", data=self.hybrid_data)
                 generatorstorages_group.create_dataset(
