@@ -24,7 +24,9 @@ from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
 NREL = False
 NREL_year, NREL_profile = 2012, ""
 
-casename = "VRE0.2_wind_2012base100%_8760_nativeIRM_nostorage_"
+casename = (
+    "VRE0.2_wind_2012base100%_8760_nativetx_18%IRM_nostorage_addgulfsolar_"
+)
 
 miso_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "VREData")
 hifld_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "HIFLD_shapefiles")
@@ -114,15 +116,15 @@ class plotter(object):
         # runs some checks on data formatting from uploads
         return self.region_df
 
-    def create_month_hour_df(self, df, month="NA", hour="NA"):
+    def create_month_hour_df(self, df, month="ALL", hour="ALL"):
         df["Date"] = list(self.miso_loads["Date"])
         df["Month"] = [
             int(re.findall(r"-(\d+)-", str(d))[0]) for d in df["Date"].values
         ]
         df["HourBegin"] = df.index.values % 24
-        if type(month == int):
+        if month != "ALL":
             df = df[df.Month == month]
-        if type(hour == int):
+        if month != "ALL":
             df = df[df.HourBegin == hour]
 
         return df
@@ -280,7 +282,7 @@ class plotter(object):
             plt.show()
         return None
 
-    def geography_tx_plot(self, attribute_string, CRS=4326):
+    def geography_tx_plot(self, attribute_string, CRS=4326, month="ALL", hour="ALL"):
         capacity_list = list(
             self.miso_tx.iloc[: len(self.miso_tx.Line.unique()) - 1, :].FW
         )  # grabs the fw capacity of lines
@@ -351,7 +353,9 @@ class plotter(object):
             attribute = getattr(self, attribute_string)
             attribute_df = pd.DataFrame(attribute.loc[df_index, :])
             attribute_df.columns = [0]  # overwrite so matching works
-            attribute_df = self.create_month_hour_df(attribute_df, month=7, hour=15)
+            attribute_df = self.create_month_hour_df(
+                attribute_df, month=month, hour=hour
+            )
             expected_utilization = attribute_df[0].mean()
             line_utilization = line_utilization.append(
                 [
@@ -378,8 +382,9 @@ class plotter(object):
         myaxes = plt.axes()
         myaxes.set_ylim([28, 50])
         myaxes.set_xlim([-100, -82])
-        # print(zone_centroid_gdf)
-        # print(line_utilization_gdf)
+        myaxes.set_title(
+            "Line Utilization \n (Hours=" + str(hour) + ", Month=" + str(month) + ")"
+        )
         zone_centroid_gdf.plot(ax=myaxes, color="b")
         # line_utilization_gdf.plot(ax=myaxes, color="r")
         self.states_map.plot(ax=myaxes, edgecolor="k", facecolor="None")
@@ -391,10 +396,22 @@ class plotter(object):
                 lw=lw2 * 0.001, ax=myaxes, color="k", zorder=1, alpha=0.3
             )
             line_utilization_gdf[line_utilization_gdf.MW == lw].plot(
-                lw=lw * 0.005, ax=myaxes, color="r", zorder=2
+                lw=lw * 0.001, ax=myaxes, color="r", zorder=2
             )
 
-        plt.savefig(join(self.results_folder, "test" + ".jpg"), dpi=300)
+        plt.savefig(
+            join(
+                self.results_folder,
+                "line_utilization_m="
+                + str(month)
+                + "_h="
+                + str(hour)
+                + "_"
+                + self.casename
+                + ".jpg",
+            ),
+            dpi=300,
+        )
         return None
 
     def load_utility_df(self, attribute_string):
@@ -556,10 +573,10 @@ if NREL:
 else:
     scenario_label = ""
 
-test.geography_tx_plot("utilization")
+# test.geography_tx_plot("utilization", month=7, hour=20)
 test.geography_plot("region_lole")
 test.geography_plot("region_eue")
-test.heatmap("period_eue")
+# test.heatmap("period_eue")
 # test.panel_tx_heatmap("utilization")  # takes awhile
 # test.tx_heatmap("15", "utilization")
 # test.tx_heatmap("15", "flow")
