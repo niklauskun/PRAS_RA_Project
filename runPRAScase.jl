@@ -1,12 +1,15 @@
 using PRAS, FileIO, JLD, DelimitedFiles, DataFrames, CSV, XLSX, TickTock
-foldername = "testPRAS11.9" # whatever you named the folde
-casename = "VRE0.2_wind_2012base100%_8760_nativetx_18%IRM_nostorage_addgulfsolar.pras"
-casename2 = "VRE0.2_wind_2012base100%_8760_nativetx_18%IRM_nostorage_addgulfsolar.pras"
-casename3 = "VRE0.4_wind_2012base100%_8760_18%IRM_nostorage_adddecostorage.pras"
+foldername = "testPRAS11.12" # whatever you named the folde
+casename = "VRE0.2_wind_2012base100%_8760_50%tx_18%IRM_nostorage_addgulfsolar.pras"
+casename2 = "VRE0.2_wind_2012base100%_8760_50%tx_18%IRM_nostorage_addgulfsolar.pras"
+casename3 = "VRE0.2_wind_2012base100%_8760_25%tx_18%IRM_nostorage_addgulfsolar.pras"
+casename4 = "VRE0.2_wind_2012base100%_8760_25%tx_18%IRM_nostorage_addgulfsolar.pras"
 
 path = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)
 path2 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename2)
+
 path3 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename3)
+path4 = joinpath(homedir(), "Desktop", foldername,"PRAS_files",casename4)
 
 function run_path_model(input_path, casename, foldername, samples)
     model = SystemModel(input_path)
@@ -60,13 +63,16 @@ function run_model_elcc(m, m2, capacity, zone_str, samples, pval)
     return min_elcc, max_elcc
 end
 
+function run_model_elcc_convolution(m, m2, capacity, zone_str)
+    min_elcc, max_elcc = assess(ELCC{EUE}(capacity, zone_str), Convolution(), Temporal(), m, m2)
+    return min_elcc, max_elcc
+
 function run_path_elcc_minimal(input_path, input_path2, capacity, zone_str, samples, pval)
     m = SystemModel(input_path)
     m2 = SystemModel(input_path2)
     min_elcc, max_elcc = assess(ELCC{EUE}(capacity, zone_str, p_value=pval), SequentialMonteCarlo(samples=samples), Minimal(), m, m2)
     return min_elcc, max_elcc
 end
-
 
 function run_path_efc(input_path, input_path2, capacity, zone_str, samples)
     m = SystemModel(input_path)
@@ -185,7 +191,7 @@ function ELCC_wrapper_generator(casename, sys_path, aug_path, samples, pval, cap
             augsystem = SystemModel(aug_path)
             augmodel = augment_system_generator(augsystem, zone, resource, capacity)
             println("case model loaded, running ELCC...")
-            min_elcc, max_elcc = run_model_elcc(basesystem, augmodel, capacity, zone_nums[i], samples, pval)
+            min_elcc, max_elcc = run_model_elcc_convolution(basesystem, augmodel, capacity, zone_nums[i])
             println("...case ELCC run, storing data")
             push!(df, [string(zone, resource),capacity,pval,samples,min_elcc,max_elcc,ZoneEUE,ZoneLOLE]) # write results into dataframe
             laptimer()
@@ -201,11 +207,14 @@ end
 
 # wrapped ELCC runs
 # these take a very long time if you're not careful
-ELCC_wrapper_generator(casename,path,path2, 1000,.2,100)
-ELCC_wrapper_storage(casename,path,path2,1000,.2,100,6)
-ELCC_wrapper_storage(casename,path,path2,1000,.2,500,6)
+ELCC_wrapper_storage(casename,path,path2,5000,.2,500,6)
+ELCC_wrapper_storage(casename,path3,path4,5000,.2,500,6)
+
+ELCC_wrapper_generator(casename,path,path2,5000,.2,500)
+ELCC_wrapper_generator(casename,path3,path4,5000,.2,500)
 
 # run and create results (EUE, LOLE, etc.) for a single case
+run_path_model(path4,casename4,foldername, 10000)
 run_path_model(path2,casename2,foldername, 10000)
 
 ## RUN FUNCTIONS ONCE YOU HAVE LOADED THEM
