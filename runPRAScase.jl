@@ -9,7 +9,7 @@ path = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)
 path2 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename2)
 
 path3 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename3)
-path4 = joinpath(homedir(), "Desktop", foldername,"PRAS_files",casename4)
+path4 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename4)
 
 function run_path_model(input_path, casename, foldername, samples)
     model = SystemModel(input_path)
@@ -66,6 +66,7 @@ end
 function run_model_elcc_convolution(m, m2, capacity, zone_str)
     min_elcc, max_elcc = assess(ELCC{EUE}(capacity, zone_str), Convolution(), Temporal(), m, m2)
     return min_elcc, max_elcc
+end
 
 function run_path_elcc_minimal(input_path, input_path2, capacity, zone_str, samples, pval)
     m = SystemModel(input_path)
@@ -208,10 +209,10 @@ end
 # wrapped ELCC runs
 # these take a very long time if you're not careful
 ELCC_wrapper_storage(casename,path,path2,5000,.2,500,6)
-ELCC_wrapper_storage(casename,path3,path4,5000,.2,500,6)
+ELCC_wrapper_storage(casename3,path3,path4,5000,.2,500,6)
 
 ELCC_wrapper_generator(casename,path,path2,5000,.2,500)
-ELCC_wrapper_generator(casename,path3,path4,5000,.2,500)
+ELCC_wrapper_generator(casename3,path3,path4,5000,.2,500)
 
 # run and create results (EUE, LOLE, etc.) for a single case
 run_path_model(path4,casename4,foldername, 10000)
