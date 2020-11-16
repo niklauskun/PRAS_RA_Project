@@ -14,9 +14,12 @@ import descartes
 from pylab import text
 import sys
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, MultiPoint
+from shapely.ops import cascaded_union
+from geovoronoi.plotting import subplot_for_map, plot_voronoi_polys_with_points_in_area, plot_voronoi_polys, plot_points
+from geovoronoi import voronoi_regions_from_coords, points_to_coords
 
-folder = "testPRAS11.9"
+folder = "testPRAS11.12"
 data = join(os.environ["HOMEPATH"], "Desktop", folder)
 sys.path.insert(0, data)
 from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
@@ -25,7 +28,7 @@ NREL = False
 NREL_year, NREL_profile = 2012, ""
 
 casename = (
-    "VRE0.2_wind_2012base100%_8760_nativetx_18%IRM_nostorage_addgulfsolar_"
+    "VRE0.2_wind_2012base100%_8760_50%tx_18%IRM_nostorage_addgulfsolar_"
 )
 
 miso_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "VREData")
@@ -61,6 +64,27 @@ class plotter(object):
             join(data_folder, "NREL-Seams Model (MISO).xlsx"),
             sheet_name="Transmission",
         )
+
+        #new loads
+        miso_busmap = pd.read_csv(os.path.join(data_folder,"MISO_data", "Bus Mapping Extra Data.csv"))
+        miso_bus_zone = pd.read_excel(join(data_folder,"MISO_data", "Bus_to_SeamsRegion.xlsx"))
+        miso_busmap = miso_busmap.merge(miso_bus_zone, left_on="Name", right_on="Bus")
+        miso_busmap = miso_busmap[~miso_busmap["Seams Region"].isin(["PJM-C", "CSWS+","MDU","MN-NW"])]
+        miso_busmap = miso_busmap.rename(columns={"Seams Region": "Seams_Region"})
+        miso_seam_zone = pd.DataFrame(columns=["Seams_Region", "geometry"])
+        for i in list(miso_busmap.Seams_Region.unique()):
+            tmp = miso_busmap[miso_busmap.Seams_Region == i]
+            tmp_Lon = list(tmp.Lon)
+            tmp_Lat = list(tmp.Lat)
+            Seams_loc = MultiPoint(list(zip(tmp_Lon, tmp_Lat)))
+            miso_seam_zone = miso_seam_zone.append(
+                [{"Seams_Region": i, "geometry": Seams_loc,}], ignore_index=True,
+            )
+        miso_seam_zone_gdf = gpd.GeoDataFrame(miso_seam_zone)
+        miso_seam_zone_gdf["centroid"] = miso_seam_zone_gdf.centroid
+        miso_seam_zone_gdf = miso_seam_zone_gdf.set_geometry("centroid")
+        miso_seam_zone_gdf.crs = "EPSG:4326"
+        self.miso_seam_zone_gdf = miso_seam_zone_gdf #for later use
 
         # results loads
         region_lole = pd.read_csv(
@@ -281,6 +305,154 @@ class plotter(object):
         if show:
             plt.show()
         return None
+
+    def updated_geography_plot(self,CRS=4326,attribute="EUE",plot_type="bubbles"):
+        if attribute != "LOLE" and attribute != "EUE":
+            raise ValueError("can only plot LOLE or EUE")
+        boundary = self.iso_map[self.iso_map["NAME"] == self.iso_map.at[0, "NAME"]] 
+        boundary = boundary.to_crs(epsg=CRS)
+        gdf_proj = self.miso_seam_zone_gdf.to_crs(boundary.crs)
+        #re-assignment due to different zone naming conventions
+        gdf_proj.at[gdf_proj[gdf_proj.Seams_Region=='WAPA_DK'].index.values[0],"Seams_Region"]="CBPC-NIPCO"#[0] = "CBPC-NIPCO"
+        gdf_proj.at[gdf_proj[gdf_proj.Seams_Region=='BREC'].index.values[0],"Seams_Region"]="AECIZ"
+        gdf_proj.at[gdf_proj[gdf_proj.Seams_Region=='LA-Gulf'].index.values[0],"Seams_Region"]="LA-GULF"
+        #end re-assignment
+        gdf_merge = pd.merge(gdf_proj, self.region_df,how="left", left_on="Seams_Region",right_on="names")
+        self.gdf_merge = gdf_merge
+        line_gdf = self.create_lines("utilization")
+        labs = list(gdf_merge['Seams_Region'])
+        attribute_max = gdf_merge[attribute].max()
+        boundary.geometry = boundary.geometry.buffer(0)
+        boundary_shape = cascaded_union(boundary.geometry)
+        coords = points_to_coords(gdf_proj.geometry)
+        poly_shapes, pts, poly_to_pt_assignments = voronoi_regions_from_coords(
+            coords, boundary_shape
+        )
+        #run plotting
+        fig, ax = subplot_for_map()
+        myaxes = plt.axes()
+        myaxes.set_ylim([23, 50])
+        myaxes.set_xlim([-104, -82])
+        #for i,s in enumerate(poly_shapes):
+        #    gdf_merge.at[i,'geometry'] = s
+        divider = make_axes_locatable(myaxes)
+        cax = divider.append_axes("bottom", size="5%", pad=0.1)
+        if plot_type == "bubbles":
+            gdf_merge.plot(
+                ax=myaxes,
+                column=attribute,
+                cmap="Blues",
+                legend=True,
+                cax=cax,
+                alpha=1.,
+                markersize=100,
+                legend_kwds={"label": attribute + " (MWh (EUE) or Hours (LOLE) /y)",
+                "orientation": "horizontal"}
+            )
+            plot_points(myaxes,pts,2,labels=labs,alpha=0.) #mostly just adds the zonal labels
+        elif plot_type == "fills":
+            for i,s in enumerate(poly_shapes):
+                plot_voronoi_polys(myaxes, s,color='g',alpha=gdf_merge.at[i,attribute]/attribute_max)
+            gdf_merge.plot(
+                ax=myaxes,
+                column=attribute,
+                cmap="Greens",
+                legend=True,
+                cax=cax,
+                alpha=0.,
+                legend_kwds={"label": attribute + " (MWh (EUE) or Hours (LOLE) /y)",
+                "orientation": "horizontal"}
+            )
+            plot_points(myaxes,pts,2,labels=labs) #mostly just adds the zonal labels
+        else:
+            raise ValueError("plot_type must be either fills or bubbles")
+
+        linewidths = list(line_gdf.MW)
+        linewidths_2 = list(line_gdf.capacity)
+        #finally, add the tx lines
+        for lw, lw2 in zip(linewidths, linewidths_2):
+            line_gdf[line_gdf.MW == lw].plot(
+                lw=lw2 * 0.001, ax=myaxes, color="k", zorder=2, alpha=0.3
+            )
+            line_gdf[line_gdf.MW == lw].plot(
+                lw=lw * 0.001, ax=myaxes, color="r", zorder=3
+            )
+        #plot_voronoi_polys_with_points_in_area(
+        #    myaxes, boundary_shape, poly_shapes, pts, poly_to_pt_assignments, voronoi_color="r"
+        #)
+        
+        #could also add a MISO boundary if it seems useful
+        self.iso_map[self.iso_map["NAME"] == self.iso_map.at[0, "NAME"]].plot(
+            ax=myaxes, facecolor="b", edgecolor="y", alpha=0.04, linewidth=2, zorder=1
+        )
+        #last big thing would be a helpful legend....
+        self.states_map.plot(ax=myaxes, edgecolor="k", facecolor="None", alpha=.3)
+        #states_map.plot(ax=myaxes, edgecolor="k", facecolor="None")
+        myaxes.set_title("MISO regions polygons \n (fill based on "+attribute+")")
+        print("plotted")
+        plt.savefig(
+                os.path.join(self.results_folder, "voronoi"+plot_type+self.casename+".jpg"),
+                dpi=300,
+            )
+        #eventually create values for loading EUE, lole, etc
+        return None
+
+    def create_lines(self,attribute_string,CRS=4326, month="ALL", hour="ALL"):
+        capacity_list = list(
+            self.miso_tx.iloc[: len(self.miso_tx.Line.unique()) - 1, :].FW
+        )  
+        line_utilization = pd.DataFrame(
+        columns=["from_name", "to_name", "line_loc", "expected_utilization"]
+        )
+        for i, v in enumerate(list(self.miso_tx.Line.unique())[:-1]):
+            if i % 20 == 0:
+                print(
+                    str(i)
+                    + " out of "
+                    + str(len(list(self.miso_tx.Line.unique())))
+                    + " lines are plotted"
+                )
+            df_index = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))].index[0]
+            from_label = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))]["From"].values[0]  # [0]
+            to_label = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))]["To"].values[0]# [0]
+            from_name = self.miso_map[self.miso_map["CEP Bus ID"] == from_label][
+                "CEP Bus Name"
+            ].values[0]
+            to_name = self.miso_map[self.miso_map["CEP Bus ID"] == to_label][
+                "CEP Bus Name"
+            ].values[0]
+            print(type(self.gdf_merge[self.gdf_merge.Seams_Region==from_name].centroid))
+            from_name_loc = self.gdf_merge[self.gdf_merge.Seams_Region==from_name].centroid.set_crs(epsg=CRS).values[0]
+            to_name_loc = self.gdf_merge[self.gdf_merge.Seams_Region==to_name].centroid.set_crs(epsg=CRS).values[0]
+            line_loc = LineString([from_name_loc, to_name_loc]) #ok, have the string
+            attribute = getattr(self, attribute_string)
+            attribute_df = pd.DataFrame(attribute.loc[df_index, :])
+            attribute_df.columns = [0]  # overwrite so matching works
+            attribute_df = self.create_month_hour_df(
+                attribute_df, month=month, hour=hour
+            )
+            expected_utilization = attribute_df[0].mean()
+            line_utilization = line_utilization.append(
+                [
+                    {
+                        "from_name": from_name,
+                        "to_name": to_name,
+                        "line_loc": line_loc,
+                        "expected_utilization": expected_utilization,
+                    }
+                ],
+                ignore_index=True,
+            )
+        line_utilization_gdf = gpd.GeoDataFrame(
+            line_utilization, geometry=line_utilization.line_loc
+        )
+        line_utilization_gdf["capacity"] = capacity_list
+        line_utilization_gdf["MW"] = (
+            line_utilization_gdf.capacity * line_utilization_gdf.expected_utilization
+        )
+        line_utilization_gdf.crs = "EPSG:" + str(CRS)
+        line_utilization_gdf.to_crs(epsg=CRS, inplace=True)
+        return line_utilization_gdf
 
     def geography_tx_plot(self, attribute_string, CRS=4326, month="ALL", hour="ALL"):
         capacity_list = list(
@@ -573,10 +745,11 @@ if NREL:
 else:
     scenario_label = ""
 
-# test.geography_tx_plot("utilization", month=7, hour=20)
-test.geography_plot("region_lole")
-test.geography_plot("region_eue")
-# test.heatmap("period_eue")
+#test.geography_tx_plot("utilization", month=7, hour=20)
+#test.geography_plot("region_lole")
+#test.geography_plot("region_eue")
+test.updated_geography_plot()
+#test.heatmap("period_eue")
 # test.panel_tx_heatmap("utilization")  # takes awhile
 # test.tx_heatmap("15", "utilization")
 # test.tx_heatmap("15", "flow")
