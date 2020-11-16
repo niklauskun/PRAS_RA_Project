@@ -1,4 +1,5 @@
 # general imports
+import warnings
 import os
 from os.path import join
 import pandas as pd
@@ -6,6 +7,7 @@ import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 import time
 import h5py
 import re
@@ -306,7 +308,7 @@ class plotter(object):
             plt.show()
         return None
 
-    def updated_geography_plot(self,CRS=4326,attribute="EUE",plot_type="bubbles"):
+    def updated_geography_plot(self,CRS=4326,attribute="EUE",line_attribute="utilization",plot_type="fills"):
         if attribute != "LOLE" and attribute != "EUE":
             raise ValueError("can only plot LOLE or EUE")
         boundary = self.iso_map[self.iso_map["NAME"] == self.iso_map.at[0, "NAME"]] 
@@ -319,7 +321,7 @@ class plotter(object):
         #end re-assignment
         gdf_merge = pd.merge(gdf_proj, self.region_df,how="left", left_on="Seams_Region",right_on="names")
         self.gdf_merge = gdf_merge
-        line_gdf = self.create_lines("utilization")
+        line_gdf = self.create_lines(line_attribute)
         labs = list(gdf_merge['Seams_Region'])
         attribute_max = gdf_merge[attribute].max()
         boundary.geometry = boundary.geometry.buffer(0)
@@ -331,7 +333,7 @@ class plotter(object):
         #run plotting
         fig, ax = subplot_for_map()
         myaxes = plt.axes()
-        myaxes.set_ylim([23, 50])
+        myaxes.set_ylim([20, 50])
         myaxes.set_xlim([-104, -82])
         #for i,s in enumerate(poly_shapes):
         #    gdf_merge.at[i,'geometry'] = s
@@ -377,9 +379,6 @@ class plotter(object):
             line_gdf[line_gdf.MW == lw].plot(
                 lw=lw * 0.001, ax=myaxes, color="r", zorder=3
             )
-        #plot_voronoi_polys_with_points_in_area(
-        #    myaxes, boundary_shape, poly_shapes, pts, poly_to_pt_assignments, voronoi_color="r"
-        #)
         
         #could also add a MISO boundary if it seems useful
         self.iso_map[self.iso_map["NAME"] == self.iso_map.at[0, "NAME"]].plot(
@@ -389,6 +388,31 @@ class plotter(object):
         self.states_map.plot(ax=myaxes, edgecolor="k", facecolor="None", alpha=.3)
         #states_map.plot(ax=myaxes, edgecolor="k", facecolor="None")
         myaxes.set_title("MISO regions polygons \n (fill based on "+attribute+")")
+
+        #add manual legends to help interpret plot
+        cap_1 = round(max(linewidths_2),-3)
+        cap_2 = round(max(linewidths_2),-3)*2./3.
+        cap_3 = round(max(linewidths_2),-3)*1./3.
+
+        utilization_1 = round(max(linewidths),-2)
+        utilization_2 = round(max(linewidths),-2)*2./3.
+        utilization_3 = round(max(linewidths),-2)*1./3.
+
+        custom_capacity_lines = [Line2D([0], [0], color='k', lw=cap_1*.001, alpha=0.3),
+                Line2D([0], [0], color='k', lw=cap_2*.001, alpha=0.3),
+                Line2D([0], [0], color='k', lw=cap_3*.001, alpha=0.3),
+                Line2D([0], [0], color='r', lw=utilization_1*.001),
+                Line2D([0], [0], color='r', lw=utilization_2*.001),
+                Line2D([0], [0], color='r', lw=utilization_3*.001)]
+        myaxes.legend(custom_capacity_lines, [str(int(cap_1))+' MW',str(int(cap_2))+' MW',str(int(cap_3))+' MW',
+        str(int(utilization_1))+' MW',str(int(utilization_2))+' MW',str(int(utilization_3))+' MW'], 
+        loc="lower left",title="Line Capacity   Line "+line_attribute.capitalize(), fontsize="x-small",title_fontsize="small",frameon=False,ncol=2)
+
+        #custom_utilization_lines = []
+        #myaxes.legend(custom_utilization_lines, [], 
+        #loc="lower right",title="Line "+line_attribute, fontsize="x-small",title_fontsize="small",frameon=False)
+
+
         print("plotted")
         plt.savefig(
                 os.path.join(self.results_folder, "voronoi"+plot_type+self.casename+".jpg"),
@@ -404,6 +428,7 @@ class plotter(object):
         line_utilization = pd.DataFrame(
         columns=["from_name", "to_name", "line_loc", "expected_utilization"]
         )
+        print("NOTE: ignoring CRS-related geopandas warnings")
         for i, v in enumerate(list(self.miso_tx.Line.unique())[:-1]):
             if i % 20 == 0:
                 print(
@@ -421,9 +446,9 @@ class plotter(object):
             to_name = self.miso_map[self.miso_map["CEP Bus ID"] == to_label][
                 "CEP Bus Name"
             ].values[0]
-            print(type(self.gdf_merge[self.gdf_merge.Seams_Region==from_name].centroid))
-            from_name_loc = self.gdf_merge[self.gdf_merge.Seams_Region==from_name].centroid.set_crs(epsg=CRS).values[0]
-            to_name_loc = self.gdf_merge[self.gdf_merge.Seams_Region==to_name].centroid.set_crs(epsg=CRS).values[0]
+            warnings.simplefilter(action='ignore', category=UserWarning)
+            from_name_loc = self.gdf_merge[self.gdf_merge.Seams_Region==from_name].centroid.values[0]
+            to_name_loc = self.gdf_merge[self.gdf_merge.Seams_Region==to_name].centroid.values[0]
             line_loc = LineString([from_name_loc, to_name_loc]) #ok, have the string
             attribute = getattr(self, attribute_string)
             attribute_df = pd.DataFrame(attribute.loc[df_index, :])
