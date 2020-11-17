@@ -576,8 +576,12 @@ class ELCCplotter(object):
             arglist.insert(place, a)
             self.storage_df = self.storage_case_load(arglist, a)
             arglist.pop(place)
-        self.storage_df["minelcc%"] = self.storage_df.minelcc * 0.2
-        self.storage_df["maxelcc%"] = self.storage_df.maxelcc * 0.2
+        self.storage_df["minelcc%"] = (
+            self.storage_df.minelcc * 100.0 / max(self.storage_df.maxelcc)
+        )
+        self.storage_df["maxelcc%"] = (
+            self.storage_df.maxelcc * 100.0 / max(self.storage_df.maxelcc)
+        )
         rows = 6
         cols = 4
         fig, axs = plt.subplots(rows, cols, sharex=True, sharey=True, figsize=(20, 10))
@@ -594,8 +598,9 @@ class ELCCplotter(object):
             axs[int(i / cols), i % cols].set_xlabel("Percent of base Tx capacity")
 
         # write plot
+        filename = "_".join([str(elem) for elem in arglist])
         plt.savefig(
-            join(self.results_folder, "elcc.jpg",), dpi=300,
+            join(self.results_folder, "ELCC_" + filename + ".jpg",), dpi=300,
         )
 
         # finally, run and panel a plot for a zone or set of zones
@@ -615,8 +620,58 @@ class ELCCplotter(object):
         return df
 
     def solar_case_plot(self, *args):
-        casename = "solarELCC_" + self.casename
+        arglist = []
+        for counter, i in enumerate(args):
+            if type(i) == list:
+                argiter = i
+                place = counter
+            else:
+                arglist.append(i)
+        for a in argiter:
+            arglist.insert(place, a)
+            self.solar_df = self.solar_case_load(arglist, a)
+            arglist.pop(place)
+        self.solar_df["minelcc%"] = self.solar_df.minelcc * (
+            100.0 / max(self.solar_df.maxelcc)
+        )
+        self.solar_df["maxelcc%"] = self.solar_df.maxelcc * (
+            100.0 / max(self.solar_df.maxelcc)
+        )
+        rows = 6
+        cols = 4
+        fig, axs = plt.subplots(rows, cols, sharex=True, sharey=True, figsize=(20, 10))
+        for i, zone in enumerate(self.storage_df.resourcename.unique()):
+            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+                x="xval", y="minelcc%", c="k", ax=axs[int(i / cols), i % cols]
+            )
+            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+                x="xval", y="maxelcc%", c="r", ax=axs[int(i / cols), i % cols]
+            )
+            # axs[int(i / cols), i % cols].set_ylim(1, 13)
+            axs[int(i / cols), i % cols].set_title(zone)
+            axs[int(i / cols), i % cols].set_ylabel("ELCC (%)")
+            axs[int(i / cols), i % cols].set_xlabel("Percent of base Tx capacity")
+
+        # write plot
+        filename = "_".join([str(elem) for elem in arglist])
+        plt.savefig(
+            join(self.results_folder, "ELCC_" + filename + ".jpg",), dpi=300,
+        )
         return None
+
+    def solar_case_load(self, arglist, colname):
+        casename = "solarELCC_" + self.casename
+        # solarELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
+        for i in arglist:
+            casename = self.handler(casename, i)
+        casename += "addgulfsolar"
+        df = pd.read_csv(join(self.elcc_folder, casename + ".csv"))
+        df["caseID"] = [colname for i in df.index]
+        df["xval"] = [int(re.search(r"\d+", colname).group()) for i in df.index]
+
+        if hasattr(self, "solar_df"):
+            return pd.concat([self.storage_df, df])
+        return df
 
     def handler(self, casename, obj):
         if type(obj) == str:
