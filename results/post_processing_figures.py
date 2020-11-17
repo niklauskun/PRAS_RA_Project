@@ -16,7 +16,7 @@ import sys
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from shapely.geometry import Point, LineString
 
-folder = "testPRAS11.9"
+folder = "test11.16"
 data = join(os.environ["HOMEPATH"], "Desktop", folder)
 sys.path.insert(0, data)
 from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
@@ -31,8 +31,8 @@ hifld_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "HIFLD_shapefil
 shp_path = os.environ["CONDA_PREFIX"] + r"\Library\share\gdal"
 results = join(data, "results")
 
-miso_data = LoadMISOData(data, miso_datapath, hifld_datapath, shp_path)
-miso_data.convert_CRS()
+# miso_data = LoadMISOData(data, miso_datapath, hifld_datapath, shp_path)
+# miso_data.convert_CRS()
 
 
 class plotter(object):
@@ -558,6 +558,45 @@ class plotter(object):
         return None
 
 
+class ELCCplotter(object):
+    def __init__(self, results_folder):
+        self.results_folder = results_folder
+        self.elcc_folder = join(results_folder, "ELCCresults")
+        self.casename = "VRE"
+
+    def storage_case_plot(self, *args):
+        casename = "storageELCC_" + self.casename
+        # solarELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
+        for i in args:
+            casename = self.handler(casename, i)
+        casename += "addgulfsolar"
+        df = pd.read_csv(join(self.elcc_folder, casename + ".csv"))
+        print(df)
+        return None
+
+    def solar_case_plot(self, *args):
+        casename = "solarELCC_" + self.casename
+        return None
+
+    def handler(self, casename, obj):
+        if type(obj) == list:
+            casename += obj[0]  # eventually iterable
+        elif type(obj) == str:
+            casename += obj
+        else:
+            raise ValueError(
+                "casename objects must be either strings or lists of strings"
+            )
+        casename += "_"
+        return casename
+
+
+elcc_obj = ELCCplotter(results)
+elcc_obj.storage_case_plot(
+    "0.2", "wind", "2012base100%", "8760", "0%tx", "18%IRM", "nostorage"
+)
+# storageELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
+"""
 test = plotter(data, results, casename, miso_data)
 
 if NREL:
@@ -580,4 +619,5 @@ test.heatmap("period_eue")
 # test.tx_heatmap("15", "flow")
 # test.heatmap("period_lolp", mean=True)
 test.plot_zonal_loads(NREL=NREL, year_lab=NREL_year, scenario_lab=scenario_label)
+"""
 
