@@ -564,7 +564,7 @@ class ELCCplotter(object):
         self.elcc_folder = join(results_folder, "ELCCresults")
         self.casename = "VRE"
 
-    def storage_case_plot(self, *args):
+    def storage_case_plot(self, vary_str, *args):
         arglist = []
         for counter, i in enumerate(args):
             if type(i) == list:
@@ -600,7 +600,8 @@ class ELCCplotter(object):
         # write plot
         filename = "_".join([str(elem) for elem in arglist])
         plt.savefig(
-            join(self.results_folder, "ELCC_" + filename + ".jpg",), dpi=300,
+            join(self.results_folder, vary_str + "_ELCC_" + filename + ".jpg",),
+            dpi=300,
         )
 
         # finally, run and panel a plot for a zone or set of zones
@@ -684,13 +685,14 @@ class ELCCplotter(object):
 
 elcc_obj = ELCCplotter(results)
 elcc_obj.storage_case_plot(
+    "varytxcap",
     "0.2",
     "wind",
     "2012base100%",
     "8760",
     ["0%tx", "25%tx", "50%tx", "100%tx"],
     "18%IRM",
-    "nostorage",
+    "0GWstorage",
 )
 # storageELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
 """
