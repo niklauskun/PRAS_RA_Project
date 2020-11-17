@@ -40,12 +40,13 @@ re_penetration = "0.2"
 profile_year = 2012
 NREL = False
 NREL_year, NREL_profile = 2040, "EFSLoadProfile_Reference_Moderate"
-pras_filename = "VRE0.2_wind_2012base100%_8760_nativeIRM_nostorage"
+pras_filename = "VRE0.2_wind_2012base100%_8760_nativetx_18%IRM_nostorage_addgulfsolar"
 load_scalar = 1  # how much to scale resulting load profile by... 1 should be default
 target_IRM = 0.18  # as a fraction
-use_target_IRM = False  #
+use_target_IRM = True  #
 storage_capacity = 0  # total storage capacity, in MW
-# fliename convention is VREscenario_REscenario_year_hours_RMmodifier_storage
+scale_transmission_capacity = 1  # rescales transmission capacities between zones
+# fliename convention is VREscenario_REscenario_year_hoursused_txmodifier_RMmodifier_storage
 
 folder = "testPRAS11.9"  # whatever you name your folder when pulled from Github
 
@@ -59,7 +60,7 @@ hifld_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "HIFLD_shapefil
 shp_path = (
     os.environ["CONDA_PREFIX"] + r"\Library\share\gdal"
 )  # you need this to pull the retail shapefile, which doesn't come with everything else
-print(shp_path)
+
 ## testing of new function in inline code ##
 if NREL:
     nreltester = NRELEFSprofiles(folder_datapath, NREL_profile)
@@ -141,7 +142,7 @@ HDF5_data = CreateHDF5(
     vre_capacity_scenarios,
 )
 HDF5_data.create_gens_np()
-HDF5_data.create_zone_np()
+HDF5_data.create_zone_np(tx_scalar=scale_transmission_capacity)
 HDF5_data.create_tx_np()
 
 if NREL:
@@ -165,15 +166,20 @@ HDF5_data.add_all_storage_resource(
     storage_capacity, 6, alloc_method="prorataVRE"
 )  # now is total capacity and duration
 
-# HDF5_data.add_re_generator("Utility Wind", "MEC", prof_id, "0.1", 2012)
+
 # irm adjustment to load, if desired
 if use_target_IRM:
     load_scalar = HDF5_data.calc_IRM(target_IRM, storage_capacity)
 
 
 # add a single storage resource, if desired
-# HDF5_data.add_storage_resource("MEC", 100, 6)
-
+HDF5_data.add_storage_resource("DECO", 0.1, 6)  # generic storage resource is added
+prof_id = np.random.choice(
+    final_miso_data[final_miso_data.FINAL_SEAMS_ZONE == "LA-GULF"].Name.unique()
+)
+HDF5_data.add_re_generator(
+    "Utility Solar", "LA-GULF", prof_id, "0.4", 2012, 15, overwrite_MW=0.1
+)
 
 # finally, export PRAS case
 HDF5_data.write_h5pyfile(pras_filename, load_scalar=load_scalar)
