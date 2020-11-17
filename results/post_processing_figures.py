@@ -565,35 +565,57 @@ class ELCCplotter(object):
         self.casename = "VRE"
 
     def storage_case_plot(self, *args):
+        arglist = []
+        for counter, i in enumerate(args):
+            if type(i) == list:
+                argiter = i
+                place = counter
+            else:
+                arglist.append(i)
+        for a in argiter:
+            arglist.insert(place, a)
+            self.storage_df = self.storage_case_load(arglist, a)
+            arglist.pop(place)
+        print(self.storage_df.reset_index())
+
+        # finally, run and panel a plot for a zone or set of zones
+
+    def storage_case_load(self, arglist, colname):
         casename = "storageELCC_" + self.casename
         # solarELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
-        for i in args:
+        for i in arglist:
             casename = self.handler(casename, i)
         casename += "addgulfsolar"
         df = pd.read_csv(join(self.elcc_folder, casename + ".csv"))
-        print(df)
-        return None
+        df["caseID"] = [colname for i in df.index]
+        df["xval"] = [re.search(r"\d+", colname).group() for i in df.index]
+
+        if hasattr(self, "storage_df"):
+            return pd.concat([self.storage_df, df])
+        return df
 
     def solar_case_plot(self, *args):
         casename = "solarELCC_" + self.casename
         return None
 
     def handler(self, casename, obj):
-        if type(obj) == list:
-            casename += obj[0]  # eventually iterable
-        elif type(obj) == str:
+        if type(obj) == str:
             casename += obj
         else:
-            raise ValueError(
-                "casename objects must be either strings or lists of strings"
-            )
+            raise ValueError("casename objects must be strings")
         casename += "_"
         return casename
 
 
 elcc_obj = ELCCplotter(results)
 elcc_obj.storage_case_plot(
-    "0.2", "wind", "2012base100%", "8760", "0%tx", "18%IRM", "nostorage"
+    "0.2",
+    "wind",
+    "2012base100%",
+    "8760",
+    ["0%tx", "25%tx", "50%tx", "100%tx"],
+    "18%IRM",
+    "nostorage",
 )
 # storageELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
 """
