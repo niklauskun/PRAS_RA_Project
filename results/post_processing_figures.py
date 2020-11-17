@@ -576,7 +576,27 @@ class ELCCplotter(object):
             arglist.insert(place, a)
             self.storage_df = self.storage_case_load(arglist, a)
             arglist.pop(place)
-        print(self.storage_df.reset_index())
+        self.storage_df["minelcc%"] = self.storage_df.minelcc * 0.2
+        self.storage_df["maxelcc%"] = self.storage_df.maxelcc * 0.2
+        rows = 6
+        cols = 4
+        fig, axs = plt.subplots(rows, cols, sharex=True, sharey=True, figsize=(20, 10))
+        for i, zone in enumerate(self.storage_df.resourcename.unique()):
+            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+                x="xval", y="minelcc%", c="k", ax=axs[int(i / cols), i % cols]
+            )
+            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+                x="xval", y="maxelcc%", c="r", ax=axs[int(i / cols), i % cols]
+            )
+            # axs[int(i / cols), i % cols].set_ylim(1, 13)
+            axs[int(i / cols), i % cols].set_title(zone)
+            axs[int(i / cols), i % cols].set_ylabel("ELCC (%)")
+            axs[int(i / cols), i % cols].set_xlabel("Percent of base Tx capacity")
+
+        # write plot
+        plt.savefig(
+            join(self.results_folder, "elcc.jpg",), dpi=300,
+        )
 
         # finally, run and panel a plot for a zone or set of zones
 
@@ -588,7 +608,7 @@ class ELCCplotter(object):
         casename += "addgulfsolar"
         df = pd.read_csv(join(self.elcc_folder, casename + ".csv"))
         df["caseID"] = [colname for i in df.index]
-        df["xval"] = [re.search(r"\d+", colname).group() for i in df.index]
+        df["xval"] = [int(re.search(r"\d+", colname).group()) for i in df.index]
 
         if hasattr(self, "storage_df"):
             return pd.concat([self.storage_df, df])
