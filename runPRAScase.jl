@@ -170,7 +170,7 @@ function ELCC_wrapper_storage(casename, sys_path, aug_path, samples, pval, capac
     return df
 end
 
-function ELCC_wrapper_generator(casename, sys_path, aug_path, samples, pval, capacity)
+function ELCC_wrapper_solar(casename, sys_path, aug_path, samples, pval, capacity)
     # iterates ELCC calls for system resource augmentation
     basesystem = SystemModel(sys_path)
     # run the base system to determine regional EUE, LOLE
@@ -178,7 +178,7 @@ function ELCC_wrapper_generator(casename, sys_path, aug_path, samples, pval, cap
     region_lole_list = [results.regionloles[i].val for i in keys(results.regionloles)] # alphabetical by default so no worries
     region_eue_list = [results.regioneues[i].val for i in keys(results.regioneues)] # alphabetical by default so no worries
     df = DataFrame(resourcename=String[], capacity=Int[], pval=Float64[], samples=Int[], minelcc=Int[], maxelcc=Int[], zoneEUE=Float64[], zoneLOLE=Float64[])
-    techs = ["UtilitySolar","UtilityWind","DistributedSolar"]
+    techs = ["UtilitySolar"] # "UtilityWind","DistributedSolar"s
     miso_array = XLSX.readdata(joinpath(homedir(), "Desktop", foldername, "NREL-Seams Model (MISO).xlsx"), "Mapping", "A2:C23")
     zones = string.(miso_array[:,3]) 
     zone_nums = string.(miso_array[:,1])
@@ -192,14 +192,50 @@ function ELCC_wrapper_generator(casename, sys_path, aug_path, samples, pval, cap
             augsystem = SystemModel(aug_path)
             augmodel = augment_system_generator(augsystem, zone, resource, capacity)
             println("case model loaded, running ELCC...")
-            min_elcc, max_elcc = run_model_elcc_convolution(basesystem, augmodel, capacity, zone_nums[i])
+            min_elcc, max_elcc = run_model_elcc(basesystem, augmodel, capacity, zone_nums[i], samples, pval)
             println("...case ELCC run, storing data")
             push!(df, [string(zone, resource),capacity,pval,samples,min_elcc,max_elcc,ZoneEUE,ZoneLOLE]) # write results into dataframe
             laptimer()
         end
     end
     # write df to csv
-    case_str = string("generatorELCC_", casename[1:findlast(isequal('.'), casename) - 1], ".csv") # naming convention for storing data
+    case_str = string("solarELCC_", casename[1:findlast(isequal('.'), casename) - 1], ".csv") # naming convention for storing data
+    cd(joinpath(homedir(), "Desktop", foldername, "results"))
+    CSV.write(case_str, df)
+    tock()
+    return df
+end
+
+function ELCC_wrapper_wind(casename, sys_path, aug_path, samples, pval, capacity)
+    # iterates ELCC calls for system resource augmentation
+    basesystem = SystemModel(sys_path)
+    # run the base system to determine regional EUE, LOLE
+    results = assess(SequentialMonteCarlo(samples=samples), Network(), basesystem)
+    region_lole_list = [results.regionloles[i].val for i in keys(results.regionloles)] # alphabetical by default so no worries
+    region_eue_list = [results.regioneues[i].val for i in keys(results.regioneues)] # alphabetical by default so no worries
+    df = DataFrame(resourcename=String[], capacity=Int[], pval=Float64[], samples=Int[], minelcc=Int[], maxelcc=Int[], zoneEUE=Float64[], zoneLOLE=Float64[])
+    techs = ["UtilityWind"] # "UtilityWind","DistributedSolar"s
+    miso_array = XLSX.readdata(joinpath(homedir(), "Desktop", foldername, "NREL-Seams Model (MISO).xlsx"), "Mapping", "A2:C23")
+    zones = string.(miso_array[:,3]) 
+    zone_nums = string.(miso_array[:,1])
+    tick()
+    for resource in techs
+        for (i, zone) in enumerate(zones)
+            println(zone, " ", zone_nums[i])
+            println("running resource: ", resource, " ", zone)
+            ZoneLOLE = region_lole_list[i]
+            ZoneEUE = region_eue_list[i]
+            augsystem = SystemModel(aug_path)
+            augmodel = augment_system_generator(augsystem, zone, resource, capacity)
+            println("case model loaded, running ELCC...")
+            min_elcc, max_elcc = run_model_elcc(basesystem, augmodel, capacity, zone_nums[i], samples, pval)
+            println("...case ELCC run, storing data")
+            push!(df, [string(zone, resource),capacity,pval,samples,min_elcc,max_elcc,ZoneEUE,ZoneLOLE]) # write results into dataframe
+            laptimer()
+        end
+    end
+    # write df to csv
+    case_str = string("windELCC_", casename[1:findlast(isequal('.'), casename) - 1], ".csv") # naming convention for storing data
     cd(joinpath(homedir(), "Desktop", foldername, "results"))
     CSV.write(case_str, df)
     tock()
@@ -208,11 +244,14 @@ end
 
 # wrapped ELCC runs
 # these take a very long time if you're not careful
-ELCC_wrapper_storage(casename,path,path2,5000,.2,500,6)
-ELCC_wrapper_storage(casename3,path3,path4,5000,.2,500,6)
+ELCC_wrapper_storage(casename,path,path2,2500,.2,500,6)
+ELCC_wrapper_storage(casename3,path3,path4,2500,.2,500,6)
 
-ELCC_wrapper_generator(casename,path,path2,5000,.2,500)
-ELCC_wrapper_generator(casename3,path3,path4,5000,.2,500)
+ELCC_wrapper_solar(casename,path,path2,2500,.2,500)
+ELCC_wrapper_solar(casename3,path3,path4,2500,.2,500)
+
+ELCC_wrapper_wind(casename,path,path2,2500,.2,500)
+ELCC_wrapper_wind(casename3,path3,path4,2500,.2,500)
 
 # run and create results (EUE, LOLE, etc.) for a single case
 run_path_model(path4,casename4,foldername, 10000)
@@ -224,61 +263,7 @@ run_path_elcc_minimal(path,path2,100,"26",500, .2)
 run_path_elcc(path,path2,100,"26",5000)
 run_path_model_convolution(path2,casename2,foldername, 1000)
 
-
-# sandbox only
-
-results = assess(SequentialMonteCarlo(samples=1000), Network(), SystemModel(path))
-dump(results)
-results.regioneues
-results.regions
-fieldnames(typeof(results))
-region_lole_list = [results.regionloles[i].val for i in keys(results.regionloles)]
-region_eue_list = [results.regioneues[i].val for i in keys(results.regioneues)]
-
-run_path_elcc(path,path2,100,"26",50000)
-run_path_elcc(path,path3,100,"26",50000)
-run_path_elcc(path,path3,100,"12",50000)
-
-run_path_efc(path,path2,100,"26",200000)
-
-miso_array = XLSX.readdata(joinpath(homedir(), "Desktop", foldername, "NREL-Seams Model (MISO).xlsx"), "Mapping", "A2:C23")
-string.(miso_array[:,1]) # grab first column, store as list
-string.(miso_array[:,3])
-Float64.(a)
-
-mysystemmodel = SystemModel(path)
-for i in mysystemmodel.generators.names
-    println(i)
-end
-fieldnames(mysystemmodel)
-push!(mysystemmodel.generators.capacity,v)
-
-isimmutable(mysystemmodel.generators.capacity)
-isimmutable(mysystemmodel.generators.μ)
-isimmutable(mysystemmodel.generators.categories)
-mysystemmodel.generators.names["UPPCDistributedSolar"]
-findall(x -> x == "UPPCDistributedSolar", mysystemmodel.generators.names)[1]
-mysystemmodel.generators.names[828]
-fieldnames(typeof(mysystemmodel.generators))
-mysystemmodel.generators.categories
-v = mysystemmodel.generators.capacity[828,:]
-v
-round.(Int64, 100 / maximum(v) * v)
-mysystemmodel.generators.capacity = [mysystemmodel.generators.capacity; v']
-mysystemmodel.generators.capacity = vcat(mysystemmodel.generators.capacity, v')
-v'
-mysystemmodel.generators.capacity[827,:] = v'
-mysystemmodel.generators.capacity
-push!(mysystemmodel.generators.capacity, v')
-mysystemmodel.generators.capacity
-mysystemmodel.generators.λ[828,:]
-typeof(mysystemmodel.generators[297:332])
-mysystemmodel.region_gen_idxs[6]
-mysystemmodel2 = SystemModel(path2)
-vcat(m, v') 
-push!(m,v')
-results = assess(SequentialMonteCarlo(samples=10000), Network(), mysystemmodel)
-
+# sandbox elcc single-run cases
 # be careful with number of samples - the choice really affects runtime (though also more samples reduces error in EFC/ELCC calcs)
 min_efc, max_efc = assess(EFC{EUE}(100, "26"), SequentialMonteCarlo(samples=100_000), SpatioTemporal(), mysystemmodel, mysystemmodel2)
 min_elcc, max_elcc = assess(ELCC{EUE}(100, "26"), SequentialMonteCarlo(samples=1000), Minimal(), mysystemmodel, mysystemmodel2)
