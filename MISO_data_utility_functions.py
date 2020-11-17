@@ -869,6 +869,15 @@ class CreateHDF5(object):
 
         # and scale it by the capacity scenario
         zonal_capacity = self.vre_scenario_df.at[zone, penetration_col]
+        if zonal_capacity < 10:
+            print(
+                "overwriting zonal capacity for "
+                + zone
+                + " "
+                + name
+                + " as 100 to enable profile"
+            )
+            zonal_capacity = 100
         final_capacity_array = np_profile * zonal_capacity  # scales profile
         if overwrite_MW != 0:
             print(overwrite_MW)
