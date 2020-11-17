@@ -6,6 +6,7 @@ import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 import time
 import h5py
 import re
@@ -582,20 +583,70 @@ class ELCCplotter(object):
         self.storage_df["maxelcc%"] = (
             self.storage_df.maxelcc * 100.0 / max(self.storage_df.maxelcc)
         )
+        self.storage_df["avgelcc%"] = (
+            self.storage_df["maxelcc%"] + self.storage_df["minelcc%"]
+        ) * 0.5
+
         rows = 6
         cols = 4
         fig, axs = plt.subplots(rows, cols, sharex=True, sharey=True, figsize=(20, 10))
+        axs[rows - 1, cols - 2].set_visible(
+            False
+        )  # bottom r axis is off for visibility
+        axs[rows - 1, cols - 1].set_visible(
+            False
+        )  # bottom r axis is off for visibility
+        fig.suptitle("6-hour battery ELCC as function of ICAP", fontsize=30)
         for i, zone in enumerate(self.storage_df.resourcename.unique()):
-            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+            self.storage_df[self.storage_df.resourcename == zone].plot.line(
+                x="xval",
+                y="avgelcc%",
+                c="r",
+                ax=axs[int(i / cols), i % cols],
+                legend=False,
+            )
+            subsetdf = self.storage_df[self.storage_df.resourcename == zone]
+            axs[int(i / cols), i % cols].fill_between(
+                subsetdf.xval,
+                subsetdf["minelcc%"],
+                subsetdf["maxelcc%"],
+                color="k",
+                alpha=0.2,
+            )
+            """
+            self.storage_df[self.storage_df.resourcename == zone].plot.line(
                 x="xval", y="minelcc%", c="k", ax=axs[int(i / cols), i % cols]
             )
-            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+            self.storage_df[self.storage_df.resourcename == zone].plot.line(
                 x="xval", y="maxelcc%", c="r", ax=axs[int(i / cols), i % cols]
             )
+            """
             # axs[int(i / cols), i % cols].set_ylim(1, 13)
-            axs[int(i / cols), i % cols].set_title(zone)
+            axs[int(i / cols), i % cols].set_title(
+                zone[: zone.find(re.findall(r"\d+", zone)[0])]
+            )
             axs[int(i / cols), i % cols].set_ylabel("ELCC (%)")
-            axs[int(i / cols), i % cols].set_xlabel("Percent of base Tx capacity")
+            axs[int(i / cols), i % cols].set_xlabel("StorageICAP (GW)")
+
+        # add a manual legend to your plot, if desired
+        colors = ["black", "red"]
+        linewidths = [12, 4]
+        alphas = [0.2, 1]
+        lines = [
+            Line2D([0], [0], color=c, linewidth=lw, alpha=a)
+            for c, lw, a in zip(colors, linewidths, alphas)
+        ]
+        labels = ["80%CI", "AvgELCC(%)"]
+        plt.figlegend(
+            lines,
+            labels,
+            fontsize=24,
+            frameon=False,
+            bbox_to_anchor=(0.9, 0.15),
+            ncol=2,
+        )
+        # bbox_to_anchor=(0.9, 0.9), 1., .102)
+        # title the plot
 
         # write plot
         filename = "_".join([str(elem) for elem in arglist])
@@ -684,6 +735,7 @@ class ELCCplotter(object):
 
 
 elcc_obj = ELCCplotter(results)
+"""
 elcc_obj.storage_case_plot(
     "varytxcap",
     "0.2",
@@ -693,6 +745,17 @@ elcc_obj.storage_case_plot(
     ["0%tx", "25%tx", "50%tx", "100%tx"],
     "18%IRM",
     "0GWstorage",
+)
+"""
+elcc_obj.storage_case_plot(
+    "varystoragecapacity",
+    "0.4",
+    "wind",
+    "2012base100%",
+    "8760",
+    "100%tx",
+    "18%IRM",
+    ["0GWstorage", "12GWstorage", "30GWstorage", "100GWstorage"],
 )
 # storageELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
 """
