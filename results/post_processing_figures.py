@@ -606,6 +606,9 @@ class ELCCplotter(object):
                 legend=False,
             )
             subsetdf = self.storage_df[self.storage_df.resourcename == zone]
+            axs[int(i / cols), i % cols].text(
+                subsetdf.xval.mean(), subsetdf["avgelcc%"].mean(), "Tx=100%"
+            )
             axs[int(i / cols), i % cols].fill_between(
                 subsetdf.xval,
                 subsetdf["minelcc%"],
@@ -613,15 +616,6 @@ class ELCCplotter(object):
                 color="k",
                 alpha=0.2,
             )
-            """
-            self.storage_df[self.storage_df.resourcename == zone].plot.line(
-                x="xval", y="minelcc%", c="k", ax=axs[int(i / cols), i % cols]
-            )
-            self.storage_df[self.storage_df.resourcename == zone].plot.line(
-                x="xval", y="maxelcc%", c="r", ax=axs[int(i / cols), i % cols]
-            )
-            """
-            # axs[int(i / cols), i % cols].set_ylim(1, 13)
             axs[int(i / cols), i % cols].set_title(
                 zone[: zone.find(re.findall(r"\d+", zone)[0])]
             )
@@ -645,9 +639,9 @@ class ELCCplotter(object):
             bbox_to_anchor=(0.9, 0.15),
             ncol=2,
         )
-        # bbox_to_anchor=(0.9, 0.9), 1., .102)
-        # title the plot
-
+        # store some objects, if desired
+        self.fig = fig
+        self.axs = axs
         # write plot
         filename = "_".join([str(elem) for elem in arglist])
         plt.savefig(
@@ -655,11 +649,56 @@ class ELCCplotter(object):
             dpi=300,
         )
 
-        # finally, run and panel a plot for a zone or set of zones
+    def add_storage_line_to_existing_plot(self, vary_str, *args):
+        arglist = []
+        for counter, i in enumerate(args):
+            if type(i) == list:
+                argiter = i
+                place = counter
+            else:
+                arglist.append(i)
+        for a in argiter:
+            arglist.insert(place, a)
+            self.storage_df = self.storage_case_load(arglist, a)
+            arglist.pop(place)
+        self.storage_df["minelcc%"] = (
+            self.storage_df.minelcc * 100.0 / max(self.storage_df.maxelcc)
+        )
+        self.storage_df["maxelcc%"] = (
+            self.storage_df.maxelcc * 100.0 / max(self.storage_df.maxelcc)
+        )
+        self.storage_df["avgelcc%"] = (
+            self.storage_df["maxelcc%"] + self.storage_df["minelcc%"]
+        ) * 0.5
+
+        for i, zone in enumerate(self.storage_df.resourcename.unique()):
+            self.storage_df[self.storage_df.resourcename == zone].plot.line(
+                x="xval",
+                y="avgelcc%",
+                c="r",
+                ax=self.axs[int(i / cols), i % cols],
+                legend=False,
+            )
+            subsetdf = self.storage_df[self.storage_df.resourcename == zone]
+            self.axs[int(i / cols), i % cols].text(
+                subsetdf.xval.mean(), subsetdf["avgelcc%"].mean(), "Tx=100%"
+            )
+            self.axs[int(i / cols), i % cols].fill_between(
+                subsetdf.xval,
+                subsetdf["minelcc%"],
+                subsetdf["maxelcc%"],
+                color="k",
+                alpha=0.2,
+            )
+
+        filename = "_".join([str(elem) for elem in arglist])
+        plt.savefig(
+            join(self.results_folder, vary_str + "_ELCC_" + filename + ".jpg",),
+            dpi=300,
+        )
 
     def storage_case_load(self, arglist, colname):
         casename = "storageELCC_" + self.casename
-        # solarELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
         for i in arglist:
             casename = self.handler(casename, i)
         casename += "addgulfsolar"
@@ -692,11 +731,11 @@ class ELCCplotter(object):
         rows = 6
         cols = 4
         fig, axs = plt.subplots(rows, cols, sharex=True, sharey=True, figsize=(20, 10))
-        for i, zone in enumerate(self.storage_df.resourcename.unique()):
-            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+        for i, zone in enumerate(self.solar_df.resourcename.unique()):
+            self.solar_df[self.solar_df.resourcename == zone].plot.scatter(
                 x="xval", y="minelcc%", c="k", ax=axs[int(i / cols), i % cols]
             )
-            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+            self.solar_df[self.solar_df.resourcename == zone].plot.scatter(
                 x="xval", y="maxelcc%", c="r", ax=axs[int(i / cols), i % cols]
             )
             # axs[int(i / cols), i % cols].set_ylim(1, 13)
@@ -713,7 +752,6 @@ class ELCCplotter(object):
 
     def solar_case_load(self, arglist, colname):
         casename = "solarELCC_" + self.casename
-        # solarELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
         for i in arglist:
             casename = self.handler(casename, i)
         casename += "addgulfsolar"
@@ -722,7 +760,7 @@ class ELCCplotter(object):
         df["xval"] = [int(re.search(r"\d+", colname).group()) for i in df.index]
 
         if hasattr(self, "solar_df"):
-            return pd.concat([self.storage_df, df])
+            return pd.concat([self.solar_df, df])
         return df
 
     def handler(self, casename, obj):
