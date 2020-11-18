@@ -1,11 +1,13 @@
 # general imports
 import os
+import warnings
 from os.path import join
 import pandas as pd
 import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 import time
 import h5py
 import re
@@ -14,7 +16,15 @@ import descartes
 from pylab import text
 import sys
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, MultiPoint
+from shapely.ops import cascaded_union
+from geovoronoi.plotting import (
+    subplot_for_map,
+    plot_voronoi_polys_with_points_in_area,
+    plot_voronoi_polys,
+    plot_points,
+)
+from geovoronoi import voronoi_regions_from_coords, points_to_coords
 
 folder = "test11.16"
 data = join(os.environ["HOMEPATH"], "Desktop", folder)
@@ -24,15 +34,15 @@ from MISO_data_utility_functions import LoadMISOData, NRELEFSprofiles
 NREL = False
 NREL_year, NREL_profile = 2012, ""
 
-casename = "VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar_"
+casename = "VRE0.4_wind_2012base100%_8760_100%tx_18%IRM_0GWstorage_addgulfsolar_"
 
 miso_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "VREData")
 hifld_datapath = join(os.environ["HOMEPATH"], "Desktop", folder, "HIFLD_shapefiles")
 shp_path = os.environ["CONDA_PREFIX"] + r"\Library\share\gdal"
 results = join(data, "results")
 
-# miso_data = LoadMISOData(data, miso_datapath, hifld_datapath, shp_path)
-# miso_data.convert_CRS()
+miso_data = LoadMISOData(data, miso_datapath, hifld_datapath, shp_path)
+miso_data.convert_CRS()
 
 
 class plotter(object):
@@ -59,6 +69,33 @@ class plotter(object):
             join(data_folder, "NREL-Seams Model (MISO).xlsx"),
             sheet_name="Transmission",
         )
+
+        # new loads
+        miso_busmap = pd.read_csv(
+            os.path.join(data_folder, "MISO_data", "Bus Mapping Extra Data.csv")
+        )
+        miso_bus_zone = pd.read_excel(
+            join(data_folder, "MISO_data", "Bus_to_SeamsRegion.xlsx")
+        )
+        miso_busmap = miso_busmap.merge(miso_bus_zone, left_on="Name", right_on="Bus")
+        miso_busmap = miso_busmap[
+            ~miso_busmap["Seams Region"].isin(["PJM-C", "CSWS+", "MDU", "MN-NW"])
+        ]
+        miso_busmap = miso_busmap.rename(columns={"Seams Region": "Seams_Region"})
+        miso_seam_zone = pd.DataFrame(columns=["Seams_Region", "geometry"])
+        for i in list(miso_busmap.Seams_Region.unique()):
+            tmp = miso_busmap[miso_busmap.Seams_Region == i]
+            tmp_Lon = list(tmp.Lon)
+            tmp_Lat = list(tmp.Lat)
+            Seams_loc = MultiPoint(list(zip(tmp_Lon, tmp_Lat)))
+            miso_seam_zone = miso_seam_zone.append(
+                [{"Seams_Region": i, "geometry": Seams_loc,}], ignore_index=True,
+            )
+        miso_seam_zone_gdf = gpd.GeoDataFrame(miso_seam_zone)
+        miso_seam_zone_gdf["centroid"] = miso_seam_zone_gdf.centroid
+        miso_seam_zone_gdf = miso_seam_zone_gdf.set_geometry("centroid")
+        miso_seam_zone_gdf.crs = "EPSG:4326"
+        self.miso_seam_zone_gdf = miso_seam_zone_gdf  # for later use
 
         # results loads
         region_lole = pd.read_csv(
@@ -279,6 +316,233 @@ class plotter(object):
         if show:
             plt.show()
         return None
+
+    def updated_geography_plot(
+        self, CRS=4326, attribute="EUE", line_attribute="utilization", plot_type="fills"
+    ):
+        if attribute != "LOLE" and attribute != "EUE":
+            raise ValueError("can only plot LOLE or EUE")
+        boundary = self.iso_map[self.iso_map["NAME"] == self.iso_map.at[0, "NAME"]]
+        boundary = boundary.to_crs(epsg=CRS)
+        gdf_proj = self.miso_seam_zone_gdf.to_crs(boundary.crs)
+        # re-assignment due to different zone naming conventions
+        gdf_proj.at[
+            gdf_proj[gdf_proj.Seams_Region == "WAPA_DK"].index.values[0], "Seams_Region"
+        ] = "CBPC-NIPCO"  # [0] = "CBPC-NIPCO"
+        gdf_proj.at[
+            gdf_proj[gdf_proj.Seams_Region == "BREC"].index.values[0], "Seams_Region"
+        ] = "AECIZ"
+        gdf_proj.at[
+            gdf_proj[gdf_proj.Seams_Region == "LA-Gulf"].index.values[0], "Seams_Region"
+        ] = "LA-GULF"
+        # end re-assignment
+        gdf_merge = pd.merge(
+            gdf_proj,
+            self.region_df,
+            how="left",
+            left_on="Seams_Region",
+            right_on="names",
+        )
+        self.gdf_merge = gdf_merge
+        line_gdf = self.create_lines(line_attribute)
+        labs = list(gdf_merge["Seams_Region"])
+        attribute_max = gdf_merge[attribute].max()
+        boundary.geometry = boundary.geometry.buffer(0)
+        boundary_shape = cascaded_union(boundary.geometry)
+        coords = points_to_coords(gdf_proj.geometry)
+        poly_shapes, pts, poly_to_pt_assignments = voronoi_regions_from_coords(
+            coords, boundary_shape
+        )
+        # run plotting
+        fig, ax = subplot_for_map()
+        myaxes = plt.axes()
+        myaxes.set_ylim([20, 50])
+        myaxes.set_xlim([-104, -82])
+        # for i,s in enumerate(poly_shapes):
+        #    gdf_merge.at[i,'geometry'] = s
+        divider = make_axes_locatable(myaxes)
+        cax = divider.append_axes("bottom", size="5%", pad=0.1)
+        if plot_type == "bubbles":
+            gdf_merge.plot(
+                ax=myaxes,
+                column=attribute,
+                cmap="Blues",
+                legend=True,
+                cax=cax,
+                alpha=1.0,
+                markersize=100,
+                legend_kwds={
+                    "label": attribute + " (MWh (EUE) or Hours (LOLE) /y)",
+                    "orientation": "horizontal",
+                },
+            )
+            plot_points(
+                myaxes, pts, 2, labels=labs, alpha=0.0
+            )  # mostly just adds the zonal labels
+        elif plot_type == "fills":
+            for i, s in enumerate(poly_shapes):
+                plot_voronoi_polys(
+                    myaxes,
+                    s,
+                    color="g",
+                    alpha=gdf_merge.at[i, attribute] / attribute_max,
+                )
+            gdf_merge.plot(
+                ax=myaxes,
+                column=attribute,
+                cmap="Greens",
+                legend=True,
+                cax=cax,
+                alpha=0.0,
+                legend_kwds={
+                    "label": attribute + " (MWh (EUE) or Hours (LOLE) /y)",
+                    "orientation": "horizontal",
+                },
+            )
+            plot_points(
+                myaxes, pts, 2, labels=labs
+            )  # mostly just adds the zonal labels
+        else:
+            raise ValueError("plot_type must be either fills or bubbles")
+
+        linewidths = list(line_gdf.MW)
+        linewidths_2 = list(line_gdf.capacity)
+        # finally, add the tx lines
+        for lw, lw2 in zip(linewidths, linewidths_2):
+            line_gdf[line_gdf.MW == lw].plot(
+                lw=lw2 * 0.001, ax=myaxes, color="k", zorder=2, alpha=0.3
+            )
+            line_gdf[line_gdf.MW == lw].plot(
+                lw=lw * 0.001, ax=myaxes, color="r", zorder=3
+            )
+
+        # could also add a MISO boundary if it seems useful
+        self.iso_map[self.iso_map["NAME"] == self.iso_map.at[0, "NAME"]].plot(
+            ax=myaxes, facecolor="b", edgecolor="y", alpha=0.04, linewidth=2, zorder=1
+        )
+        # last big thing would be a helpful legend....
+        self.states_map.plot(ax=myaxes, edgecolor="k", facecolor="None", alpha=0.3)
+        # states_map.plot(ax=myaxes, edgecolor="k", facecolor="None")
+        myaxes.set_title("MISO regions polygons \n (fill based on " + attribute + ")")
+
+        # add manual legends to help interpret plot
+        cap_1 = round(max(linewidths_2), -3)
+        cap_2 = round(max(linewidths_2), -3) * 2.0 / 3.0
+        cap_3 = round(max(linewidths_2), -3) * 1.0 / 3.0
+
+        utilization_1 = round(max(linewidths), -2)
+        utilization_2 = round(max(linewidths), -2) * 2.0 / 3.0
+        utilization_3 = round(max(linewidths), -2) * 1.0 / 3.0
+
+        custom_capacity_lines = [
+            Line2D([0], [0], color="k", lw=cap_1 * 0.001, alpha=0.3),
+            Line2D([0], [0], color="k", lw=cap_2 * 0.001, alpha=0.3),
+            Line2D([0], [0], color="k", lw=cap_3 * 0.001, alpha=0.3),
+            Line2D([0], [0], color="r", lw=utilization_1 * 0.001),
+            Line2D([0], [0], color="r", lw=utilization_2 * 0.001),
+            Line2D([0], [0], color="r", lw=utilization_3 * 0.001),
+        ]
+        myaxes.legend(
+            custom_capacity_lines,
+            [
+                str(int(cap_1)) + " MW",
+                str(int(cap_2)) + " MW",
+                str(int(cap_3)) + " MW",
+                str(int(utilization_1)) + " MW",
+                str(int(utilization_2)) + " MW",
+                str(int(utilization_3)) + " MW",
+            ],
+            loc="lower left",
+            title="Line Capacity   Line " + line_attribute.capitalize(),
+            fontsize="x-small",
+            title_fontsize="small",
+            frameon=False,
+            ncol=2,
+        )
+
+        # custom_utilization_lines = []
+        # myaxes.legend(custom_utilization_lines, [],
+        # loc="lower right",title="Line "+line_attribute, fontsize="x-small",title_fontsize="small",frameon=False)
+
+        print("plotted")
+        plt.savefig(
+            os.path.join(
+                self.results_folder, "voronoi" + plot_type + self.casename + ".jpg"
+            ),
+            dpi=300,
+        )
+        # eventually create values for loading EUE, lole, etc
+        return None
+
+    def create_lines(self, attribute_string, CRS=4326, month=7, hour=18):
+        capacity_list = list(
+            self.miso_tx.iloc[: len(self.miso_tx.Line.unique()) - 1, :].FW
+        )
+        line_utilization = pd.DataFrame(
+            columns=["from_name", "to_name", "line_loc", "expected_utilization"]
+        )
+        print("NOTE: ignoring CRS-related geopandas warnings")
+        for i, v in enumerate(list(self.miso_tx.Line.unique())[:-1]):
+            if i % 20 == 0:
+                print(
+                    str(i)
+                    + " out of "
+                    + str(len(list(self.miso_tx.Line.unique())))
+                    + " lines are plotted"
+                )
+            df_index = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))].index[0]
+            from_label = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))][
+                "From"
+            ].values[
+                0
+            ]  # [0]
+            to_label = self.miso_tx[self.miso_tx["Line"] == float(str(int(v)))][
+                "To"
+            ].values[
+                0
+            ]  # [0]
+            from_name = self.miso_map[self.miso_map["CEP Bus ID"] == from_label][
+                "CEP Bus Name"
+            ].values[0]
+            to_name = self.miso_map[self.miso_map["CEP Bus ID"] == to_label][
+                "CEP Bus Name"
+            ].values[0]
+            warnings.simplefilter(action="ignore", category=UserWarning)
+            from_name_loc = self.gdf_merge[
+                self.gdf_merge.Seams_Region == from_name
+            ].centroid.values[0]
+            to_name_loc = self.gdf_merge[
+                self.gdf_merge.Seams_Region == to_name
+            ].centroid.values[0]
+            line_loc = LineString([from_name_loc, to_name_loc])  # ok, have the string
+            attribute = getattr(self, attribute_string)
+            attribute_df = pd.DataFrame(attribute.loc[df_index, :])
+            attribute_df.columns = [0]  # overwrite so matching works
+            attribute_df = self.create_month_hour_df(
+                attribute_df, month=month, hour=hour
+            )
+            expected_utilization = attribute_df[0].mean()
+            line_utilization = line_utilization.append(
+                [
+                    {
+                        "from_name": from_name,
+                        "to_name": to_name,
+                        "line_loc": line_loc,
+                        "expected_utilization": expected_utilization,
+                    }
+                ],
+                ignore_index=True,
+            )
+        line_utilization_gdf = gpd.GeoDataFrame(
+            line_utilization, geometry=line_utilization.line_loc
+        )
+        line_utilization_gdf["capacity"] = capacity_list
+        line_utilization_gdf["MW"] = (
+            line_utilization_gdf.capacity * line_utilization_gdf.expected_utilization
+        )
+        line_utilization_gdf.crs = "EPSG:" + str(CRS)
+        line_utilization_gdf.to_crs(epsg=CRS, inplace=True)
+        return line_utilization_gdf
 
     def geography_tx_plot(self, attribute_string, CRS=4326, month="ALL", hour="ALL"):
         capacity_list = list(
@@ -574,7 +838,7 @@ class ELCCplotter(object):
                 arglist.append(i)
         for a in argiter:
             arglist.insert(place, a)
-            self.storage_df = self.storage_case_load(arglist, a)
+            self.storage_df = self.storage_case_load(arglist, a, "storage_df")
             arglist.pop(place)
         self.storage_df["minelcc%"] = (
             self.storage_df.minelcc * 100.0 / max(self.storage_df.maxelcc)
@@ -582,21 +846,75 @@ class ELCCplotter(object):
         self.storage_df["maxelcc%"] = (
             self.storage_df.maxelcc * 100.0 / max(self.storage_df.maxelcc)
         )
+        self.storage_df["avgelcc%"] = (
+            self.storage_df["maxelcc%"] + self.storage_df["minelcc%"]
+        ) * 0.5
+
+        self.storage_df["case_num"] = [1.0 for i in self.storage_df.index]
+
         rows = 6
         cols = 4
         fig, axs = plt.subplots(rows, cols, sharex=True, sharey=True, figsize=(20, 10))
+        axs[rows - 1, cols - 2].set_visible(
+            False
+        )  # bottom r axis is off for visibility
+        axs[rows - 1, cols - 1].set_visible(
+            False
+        )  # bottom r axis is off for visibility
+        fig.suptitle("6-hour battery ELCC as function of ICAP", fontsize=30)
         for i, zone in enumerate(self.storage_df.resourcename.unique()):
-            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
-                x="xval", y="minelcc%", c="k", ax=axs[int(i / cols), i % cols]
+            self.storage_df[self.storage_df.resourcename == zone].plot.line(
+                x="xval",
+                y="avgelcc%",
+                c="r",
+                ax=axs[int(i / cols), i % cols],
+                legend=False,
             )
-            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
-                x="xval", y="maxelcc%", c="r", ax=axs[int(i / cols), i % cols]
+            subsetdf = self.storage_df[self.storage_df.resourcename == zone]
+            axs[int(i / cols), i % cols].text(
+                subsetdf.xval.values[int(len(subsetdf.xval) / 2.0)],
+                3.0 + subsetdf["avgelcc%"].values[int(len(subsetdf.xval) / 2.0)],
+                "Tx=100%",
+                color="r",
             )
-            # axs[int(i / cols), i % cols].set_ylim(1, 13)
-            axs[int(i / cols), i % cols].set_title(zone)
+            # axs[int(i / cols), i % cols].text(
+            #    subsetdf.xval.mean(), subsetdf["avgelcc%"].mean(), "Tx=100%"
+            # )
+            axs[int(i / cols), i % cols].fill_between(
+                subsetdf.xval,
+                subsetdf["minelcc%"],
+                subsetdf["maxelcc%"],
+                color="k",
+                alpha=0.2,
+            )
+            axs[int(i / cols), i % cols].set_title(
+                zone[: zone.find(re.findall(r"\d+", zone)[0])]
+            )
             axs[int(i / cols), i % cols].set_ylabel("ELCC (%)")
-            axs[int(i / cols), i % cols].set_xlabel("Percent of base Tx capacity")
+            axs[int(i / cols), i % cols].set_xlabel("StorageICAP (GW)")
 
+        # add a manual legend to your plot, if desired
+        colors = ["black", "red"]
+        linewidths = [12, 4]
+        alphas = [0.2, 1]
+        lines = [
+            Line2D([0], [0], color=c, linewidth=lw, alpha=a)
+            for c, lw, a in zip(colors, linewidths, alphas)
+        ]
+        labels = ["80%CI", "AvgELCC(%)"]
+        plt.figlegend(
+            lines,
+            labels,
+            fontsize=24,
+            frameon=False,
+            bbox_to_anchor=(0.88, 0.2),
+            ncol=2,
+        )
+        # store some objects, if desired
+        self.fig = fig
+        self.axs = axs
+        self.cols = cols
+        self.rows = rows
         # write plot
         filename = "_".join([str(elem) for elem in arglist])
         plt.savefig(
@@ -604,20 +922,79 @@ class ELCCplotter(object):
             dpi=300,
         )
 
-        # finally, run and panel a plot for a zone or set of zones
+    def add_storage_line_to_existing_plot(self, vary_str, case_num, *args):
+        pd.set_option("mode.chained_assignment", None)  # for now to suppress warnings
+        linecolor_list = ["r", "b", "g"]
+        arglist = []
+        # create attribute from pre-existing df, but clear it
+        self.storage_df_2 = pd.DataFrame(columns=self.storage_df.columns)
+        for counter, i in enumerate(args):
+            if type(i) == list:
+                argiter = i
+                place = counter
+            else:
+                arglist.append(i)
+        for a in argiter:
+            arglist.insert(place, a)
+            # setattr(x, attr, 'magic')
+            self.storage_df = self.storage_case_load(
+                arglist, a, "storage_df", n=case_num
+            )
+            # setattr(self, attr_ID,self.storage_case_load(arglist, a, attr_ID))
+            arglist.pop(place)
+        case_storage_df = self.storage_df[self.storage_df.case_num == case_num]
+        case_storage_df["minelcc%"] = (
+            case_storage_df.minelcc * 100.0 / max(case_storage_df.maxelcc)
+        )
+        case_storage_df["maxelcc%"] = (
+            case_storage_df.maxelcc * 100.0 / max(case_storage_df.maxelcc)
+        )
+        case_storage_df["avgelcc%"] = (
+            case_storage_df["maxelcc%"] + case_storage_df["minelcc%"]
+        ) * 0.5
 
-    def storage_case_load(self, arglist, colname):
+        for i, zone in enumerate(case_storage_df.resourcename.unique()):
+            case_storage_df[case_storage_df.resourcename == zone].plot.line(
+                x="xval",
+                y="avgelcc%",
+                c=linecolor_list[case_num - 1],
+                ax=self.axs[int(i / self.cols), i % self.cols],
+                legend=False,
+            )
+            subsetdf = case_storage_df[case_storage_df.resourcename == zone]
+            self.axs[int(i / self.cols), i % self.cols].text(
+                subsetdf.xval.mean(),
+                subsetdf["avgelcc%"].mean() - 12.0,
+                "Tx=25%",
+                color=linecolor_list[case_num - 1],
+            )
+            self.axs[int(i / self.cols), i % self.cols].fill_between(
+                subsetdf.xval,
+                subsetdf["minelcc%"],
+                subsetdf["maxelcc%"],
+                color="k",
+                alpha=0.2,
+            )
+            self.axs[int(i / self.cols), i % self.cols].set_xlabel("StorageICAP (GW)")
+
+        filename = "_".join([str(elem) for elem in arglist])
+        plt.savefig(
+            join(self.results_folder, vary_str + "_ELCC_" + filename + ".jpg",),
+            dpi=300,
+        )
+
+    def storage_case_load(self, arglist, colname, attr_string, n=1):
         casename = "storageELCC_" + self.casename
-        # solarELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
         for i in arglist:
             casename = self.handler(casename, i)
         casename += "addgulfsolar"
         df = pd.read_csv(join(self.elcc_folder, casename + ".csv"))
         df["caseID"] = [colname for i in df.index]
         df["xval"] = [int(re.search(r"\d+", colname).group()) for i in df.index]
-
-        if hasattr(self, "storage_df"):
-            return pd.concat([self.storage_df, df])
+        if n != 1:
+            df["case_num"] = [n for i in df.index]
+        if hasattr(self, attr_string):
+            return pd.concat([self.storage_df, df], sort=True)
         return df
 
     def solar_case_plot(self, *args):
@@ -641,11 +1018,11 @@ class ELCCplotter(object):
         rows = 6
         cols = 4
         fig, axs = plt.subplots(rows, cols, sharex=True, sharey=True, figsize=(20, 10))
-        for i, zone in enumerate(self.storage_df.resourcename.unique()):
-            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+        for i, zone in enumerate(self.solar_df.resourcename.unique()):
+            self.solar_df[self.solar_df.resourcename == zone].plot.scatter(
                 x="xval", y="minelcc%", c="k", ax=axs[int(i / cols), i % cols]
             )
-            self.storage_df[self.storage_df.resourcename == zone].plot.scatter(
+            self.solar_df[self.solar_df.resourcename == zone].plot.scatter(
                 x="xval", y="maxelcc%", c="r", ax=axs[int(i / cols), i % cols]
             )
             # axs[int(i / cols), i % cols].set_ylim(1, 13)
@@ -662,7 +1039,6 @@ class ELCCplotter(object):
 
     def solar_case_load(self, arglist, colname):
         casename = "solarELCC_" + self.casename
-        # solarELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
         for i in arglist:
             casename = self.handler(casename, i)
         casename += "addgulfsolar"
@@ -671,7 +1047,7 @@ class ELCCplotter(object):
         df["xval"] = [int(re.search(r"\d+", colname).group()) for i in df.index]
 
         if hasattr(self, "solar_df"):
-            return pd.concat([self.storage_df, df])
+            return pd.concat([self.solar_df, df])
         return df
 
     def handler(self, casename, obj):
@@ -684,6 +1060,7 @@ class ELCCplotter(object):
 
 
 elcc_obj = ELCCplotter(results)
+"""
 elcc_obj.storage_case_plot(
     "varytxcap",
     "0.2",
@@ -694,8 +1071,32 @@ elcc_obj.storage_case_plot(
     "18%IRM",
     "0GWstorage",
 )
-# storageELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
 """
+elcc_obj.storage_case_plot(
+    "varystoragecapacity",
+    "0.4",
+    "wind",
+    "2012base100%",
+    "8760",
+    "100%tx",
+    "18%IRM",
+    ["0GWstorage", "12GWstorage", "30GWstorage", "100GWstorage"],
+)
+
+elcc_obj.add_storage_line_to_existing_plot(
+    "varystoragecapacity",
+    2,
+    "0.4",
+    "wind",
+    "2012base100%",
+    "8760",
+    "25%tx",
+    "18%IRM",
+    ["0GWstorage", "12GWstorage", "30GWstorage"],
+)
+
+# storageELCC_VRE0.2_wind_2012base100%_8760_0%tx_18%IRM_nostorage_addgulfsolar
+
 test = plotter(data, results, casename, miso_data)
 
 if NREL:
@@ -709,14 +1110,14 @@ if NREL:
 else:
     scenario_label = ""
 
-test.geography_tx_plot("utilization", month=7, hour=16)
-test.geography_plot("region_lole")
-test.geography_plot("region_eue")
+test.updated_geography_plot()
+# test.geography_tx_plot("utilization", month=7, hour=16)
+# test.geography_plot("region_lole")
+# test.geography_plot("region_eue")
 test.heatmap("period_eue")
 # test.panel_tx_heatmap("utilization")  # takes awhile
 # test.tx_heatmap("15", "utilization")
 # test.tx_heatmap("15", "flow")
 # test.heatmap("period_lolp", mean=True)
 test.plot_zonal_loads(NREL=NREL, year_lab=NREL_year, scenario_lab=scenario_label)
-"""
 

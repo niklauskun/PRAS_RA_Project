@@ -36,19 +36,19 @@ RE_sheet = "Wind-heavy by energy"
 # RE_sheet = "More balanced by energy"
 row_len = 8760  # for HDF5 file
 slice_in_index = 0  # 0 if you want to start on 1/1
-re_penetration = "0.2"
+re_penetration = "0.4"
 profile_year = 2012
 NREL = False
 NREL_year, NREL_profile = 2040, "EFSLoadProfile_Reference_Moderate"
-pras_filename = "VRE0.2_wind_2012base100%_8760_nativetx_18%IRM_nostorage_addgulfsolar"
+pras_filename = "VRE0.4_wind_2012base100%_8760_25%tx_18%IRM_30GWstorage_addgulfsolar"
 load_scalar = 1  # how much to scale resulting load profile by... 1 should be default
 target_IRM = 0.18  # as a fraction
 use_target_IRM = True  #
-storage_capacity = 0  # total storage capacity, in MW
-scale_transmission_capacity = 1  # rescales transmission capacities between zones
+storage_capacity = 30000  # total storage capacity, in MW
+scale_transmission_capacity = 0.25  # rescales transmission capacities between zones
 # fliename convention is VREscenario_REscenario_year_hoursused_txmodifier_RMmodifier_storage
 
-folder = "testPRAS11.9"  # whatever you name your folder when pulled from Github
+folder = "test11.16"  # whatever you name your folder when pulled from Github
 
 if slice_in_index + row_len > 8760:
     raise ValueError("cannot index beyond 8760")

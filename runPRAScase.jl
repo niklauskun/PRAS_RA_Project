@@ -1,9 +1,10 @@
 using PRAS, FileIO, JLD, DelimitedFiles, DataFrames, CSV, XLSX, TickTock
-foldername = "testPRAS11.12" # whatever you named the folde
-casename = "VRE0.2_wind_2012base100%_8760_50%tx_18%IRM_nostorage_addgulfsolar.pras"
-casename2 = "VRE0.2_wind_2012base100%_8760_50%tx_18%IRM_nostorage_addgulfsolar.pras"
-casename3 = "VRE0.2_wind_2012base100%_8760_25%tx_18%IRM_nostorage_addgulfsolar.pras"
-casename4 = "VRE0.2_wind_2012base100%_8760_25%tx_18%IRM_nostorage_addgulfsolar.pras"
+foldername = "test11.16" # whatever you named the folde
+casename = "VRE0.4_wind_2012base100%_8760_100%tx_18%IRM_30GWstorage_addgulfsolar.pras"
+casename2 = "VRE0.4_wind_2012base100%_8760_100%tx_18%IRM_30GWstorage_addgulfsolar.pras"
+
+casename3 = "VRE0.4_wind_2012base100%_8760_25%tx_18%IRM_30GWstorage_addgulfsolar.pras"
+casename4 = "VRE0.4_wind_2012base100%_8760_25%tx_18%IRM_30GWstorage_addgulfsolar.pras"
 
 path = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename)
 path2 = joinpath(homedir(), "Desktop", foldername, "PRAS_files", casename2)
@@ -144,6 +145,9 @@ function ELCC_wrapper_storage(casename, sys_path, aug_path, samples, pval, capac
     region_eue_list = [results.regioneues[i].val for i in keys(results.regioneues)] # alphabetical by default so no worries
     # create DF to store results
     df = DataFrame(resourcename=String[], capacity=Int[], energy=Int[], pval=Float64[], samples=Int[], minelcc=Int[], maxelcc=Int[], ZoneEUE=Float64[], ZoneLOLE=Float64[])
+    case_tmp_str = string("tmp_storageELCC_", casename[1:findlast(isequal('.'), casename) - 1], ".csv") 
+    cd(joinpath(homedir(), "Desktop", foldername, "results"))
+    CSV.write(case_tmp_str, df) # writes a temporary dataframe
     miso_array = XLSX.readdata(joinpath(homedir(), "Desktop", foldername, "NREL-Seams Model (MISO).xlsx"), "Mapping", "A2:C23")
     zones = string.(miso_array[:,3]) 
     zone_nums = string.(miso_array[:,1])
@@ -160,6 +164,8 @@ function ELCC_wrapper_storage(casename, sys_path, aug_path, samples, pval, capac
         min_elcc, max_elcc = run_model_elcc(basesystem, augmodel, capacity, zone_nums[i], samples, pval)
         println("...case ELCC run, storing data")
         push!(df, [string(zone, duration, "hour"),capacity,capacity * duration,pval,samples,min_elcc,max_elcc,ZoneEUE,ZoneLOLE]) # write results into dataframe
+        cd(joinpath(homedir(), "Desktop", foldername, "results"))
+        CSV.write(case_tmp_str, df) # writes to temporary df
         laptimer()
     end
     # write df to csv
@@ -254,8 +260,8 @@ ELCC_wrapper_wind(casename,path,path2,2500,.2,500)
 ELCC_wrapper_wind(casename3,path3,path4,2500,.2,500)
 
 # run and create results (EUE, LOLE, etc.) for a single case
-run_path_model(path4,casename4,foldername, 10000)
-run_path_model(path2,casename2,foldername, 10000)
+run_path_model(path4,casename4,foldername, 1000)
+run_path_model(path2,casename2,foldername, 1000)
 
 ## RUN FUNCTIONS ONCE YOU HAVE LOADED THEM
 # be careful with number of samples - the choice really affects runtime (though also more samples reduces error in results)
